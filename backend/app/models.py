@@ -1,3 +1,4 @@
+
 import uuid
 from datetime import datetime
 from decimal import Decimal
@@ -128,7 +129,7 @@ class InventoryBatch(Base):
 
 class Favorite(Base):
     __tablename__ = 'favorites'
-    __table_args__ = (Index('ix_favorites_user_created_at', 'user_id', created_at.desc()),)
+    __table_args__ = (Index('ix_favorites_user_created_at', 'user_id', text('created_at DESC')),)
 
     user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey('users.id', ondelete='CASCADE'), primary_key=True)
     batch_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey('inventory_batches.id', ondelete='CASCADE'), primary_key=True)
@@ -145,7 +146,7 @@ class Order(Base):
         CheckConstraint("(fulfillment_method = 'pickup') OR (delivery_address IS NOT NULL AND length(trim(delivery_address)) > 0)", name='ck_orders_delivery_address'),
         CheckConstraint('total_amount >= 0', name='ck_orders_total_amount_nonnegative'),
         CheckConstraint("currency = 'KZT'", name='ck_orders_currency_kzt'),
-        Index('ix_orders_buyer_created_at', 'buyer_user_id', created_at.desc()),
+        Index('ix_orders_buyer_created_at', 'buyer_user_id', text('created_at DESC')),
         Index('ix_orders_store_status_created_at', 'store_id', 'status', 'created_at'),
         Index('ix_orders_status_reservation_expires_at', 'status', 'reservation_expires_at'),
     )
