@@ -141,6 +141,7 @@ class Favorite(Base):
 class Order(Base):
     __tablename__ = 'orders'
     __table_args__ = (
+        UniqueConstraint('buyer_user_id', 'idempotency_key', name='uq_orders_buyer_idempotency_key'),
         CheckConstraint("status IN ('reserved', 'accepted', 'rejected', 'ready', 'completed', 'cancelled', 'expired')", name='ck_orders_status'),
         CheckConstraint("fulfillment_method IN ('pickup', 'delivery')", name='ck_orders_fulfillment_method'),
         CheckConstraint("(fulfillment_method = 'pickup') OR (delivery_address IS NOT NULL AND length(trim(delivery_address)) > 0)", name='ck_orders_delivery_address'),
@@ -153,6 +154,7 @@ class Order(Base):
 
     id: Mapped[uuid.UUID] = uuid_pk()
     buyer_user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey('users.id', ondelete='RESTRICT'), nullable=False)
+    idempotency_key: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     store_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey('stores.id', ondelete='RESTRICT'), nullable=False)
     status: Mapped[str] = mapped_column(String(24), nullable=False, default='reserved', server_default='reserved')
     fulfillment_method: Mapped[str] = mapped_column(String(12), nullable=False)
