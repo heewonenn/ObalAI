@@ -4,15 +4,17 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 from sqlalchemy import create_engine
-from sqlalchemy.engine import URL
+from sqlalchemy.engine import URL, make_url
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 
 load_dotenv(Path(__file__).resolve().parents[1] / '.env')
 DATABASE_URL = os.getenv('DATABASE_URL', '')
 if DATABASE_URL:
-    if not DATABASE_URL.startswith(('postgresql://', 'postgresql+psycopg://')):
+    configured_url = make_url(DATABASE_URL)
+    if configured_url.drivername not in {'postgres', 'postgresql', 'postgresql+psycopg'}:
         raise RuntimeError('DATABASE_URL must point to PostgreSQL; SQLite is not supported.')
+    DATABASE_URL = configured_url.set(drivername='postgresql+psycopg').render_as_string(hide_password=False)
 else:
     password = os.getenv('POSTGRES_PASSWORD')
     if not password:
