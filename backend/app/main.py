@@ -1,9 +1,11 @@
 from contextlib import asynccontextmanager
 from datetime import datetime
+from pathlib import Path
 from typing import Literal
 from uuid import UUID
 
 from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
@@ -89,3 +91,6 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
 @app.get("/api/auth/me", response_model=UserResponse)
 def current_user(user: User = Depends(get_current_user)):
     return user
+
+
+app.mount("/demo", StaticFiles(directory=Path(__file__).with_name("demo"), html=True), name="demo")

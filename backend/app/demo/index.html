@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="kk">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Жергілікті дүкендер мен дәмханалардың жеңілдікпен ұсынған өнімдерін табыңыз.">
+  <meta name="theme-color" content="#f7f5ee">
+  <title>ObalAi — Азық-түлік каталогы</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="styles.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="wrap header-inner">
+      <a class="brand" href="#catalog" data-view="catalog" aria-label="ObalAi басты беті">
+        <img src="favicon.svg" width="37" height="37" alt="">
+        <span>Obal<span class="brand-ai">Ai</span></span>
+      </a>
+      <nav class="menu" aria-label="Негізгі мәзір">
+        <a href="#catalog" data-view="catalog" aria-current="page">Каталог</a>
+        <a href="#seller" data-view="seller">Сатушыға</a>
+      </nav>
+      <div class="session">
+        <span id="session-label" class="session-label" hidden></span>
+        <button id="sign-in" class="button button-outline button-small" type="button" data-auth="login">
+          Кіру <span aria-hidden="true">↗</span>
+        </button>
+        <button id="sign-out" class="button button-outline button-small" type="button" hidden>Шығу</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <div id="catalog-view">
+      <section class="hero" aria-labelledby="hero-title">
+        <div class="hero-copy">
+          <p class="eyebrow"><span aria-hidden="true"></span> Жергілікті азық-түлік</p>
+          <h1 id="hero-title">Жақсы тағамға <em>екінші мүмкіндік</em></h1>
+          <p class="hero-description">Жергілікті дүкендер мен дәмханалардың жеңілдікпен ұсынған өнімдерін табыңыз.</p>
+          <div class="hero-actions">
+            <a class="button button-primary" href="#offers">Каталогты қарау <span aria-hidden="true">↓</span></a>
+            <a class="button button-text" href="#seller" data-view="seller">Партия қосу <span aria-hidden="true">↗</span></a>
+          </div>
+        </div>
+        <div class="hero-image" aria-hidden="true"></div>
+      </section>
+
+      <section id="offers" class="catalog" aria-labelledby="catalog-title">
+        <div class="section-header">
+          <div>
+            <h2 id="catalog-title">Қолжетімді өнімдер</h2>
+            <p id="catalog-count" class="section-subtitle" aria-live="polite" hidden></p>
+          </div>
+          <form id="catalog-search" class="search" role="search">
+            <label class="sr-only" for="catalog-query">Өнім атауы бойынша іздеу</label>
+            <span class="search-input">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.65" aria-hidden="true"><circle cx="10.5" cy="10.5" r="5.75"/><path d="m15 15 4.5 4.5" stroke-linecap="round"/></svg>
+              <input id="catalog-query" name="q" type="search" placeholder="Өнімді іздеу" maxlength="180">
+              <button id="catalog-clear" type="button" class="search-clear" aria-label="Іздеуді тазалау" hidden>×</button>
+            </span>
+            <button class="button button-dark" type="submit">Іздеу</button>
+          </form>
+        </div>
+        <div id="catalog-state" class="catalog-state" role="status" aria-live="polite" hidden></div>
+        <div id="catalog-list" class="catalog-list"></div>
+        <button id="catalog-more" class="button button-outline catalog-more" type="button" hidden>Тағы көрсету</button>
+      </section>
+    </div>
+
+    <section id="seller-view" class="seller-view" aria-labelledby="seller-title" hidden>
+      <div class="seller-heading">
+        <a class="back-link" href="#catalog" data-view="catalog"><span aria-hidden="true">←</span> Каталогқа оралу</a>
+        <h1 id="seller-title">Сатушы кабинеті</h1>
+        <p>Дүкеніңізді қосып, өнім партиясын каталогта жариялаңыз.</p>
+      </div>
+      <div id="seller-gate" class="surface gate" hidden>
+        <div class="form-symbol" aria-hidden="true">↗</div>
+        <h2>Сатушы аккаунты</h2>
+        <p id="seller-gate-message">Өнім жариялау үшін сатушы ретінде кіріңіз.</p>
+        <div class="gate-actions">
+          <button class="button button-primary" type="button" data-auth="login">Кіру</button>
+          <button class="button button-outline" type="button" data-auth="register" data-auth-role="seller">Сатушы болып тіркелу</button>
+        </div>
+      </div>
+      <div id="seller-workspace" class="seller-workspace" hidden>
+        <section class="surface store-panel" aria-labelledby="store-heading">
+          <p class="form-step">01 / Дүкен</p>
+          <h2 id="store-heading">Сіздің дүкен</h2>
+          <p id="seller-feedback" class="feedback" role="status" aria-live="polite" hidden></p>
+          <div id="store-details" class="store-details" hidden>
+            <div class="form-symbol" aria-hidden="true">⌂</div>
+            <strong id="store-title"></strong>
+            <p id="store-location"></p>
+          </div>
+          <form id="store-form" class="stack" hidden>
+            <label>Дүкен атауы<input name="name" required maxlength="160" placeholder="Мысалы, Күнде нан"></label>
+            <label>Қала<input name="city" required maxlength="120" placeholder="Мысалы, Қызылорда"></label>
+            <label>Мекенжай<input name="address" required maxlength="500" placeholder="Көше, үй нөмірі"></label>
+            <button type="submit" class="button button-primary stretch">Дүкенді сақтау <span aria-hidden="true">↗</span></button>
+          </form>
+        </section>
+        <section class="surface batch-panel" aria-labelledby="batch-heading">
+          <p class="form-step">02 / Партия</p>
+          <h2 id="batch-heading">Жаңа партия</h2>
+          <p id="batch-placeholder" class="panel-help">Партия жариялау үшін алдымен дүкеніңізді қосыңыз.</p>
+          <form id="batch-form" class="stack" hidden>
+            <div class="fields two">
+              <label>Өнім атауы<input name="product_name" required maxlength="180" placeholder="Мысалы, ашытқылы нан"></label>
+              <label>Өлшем бірлігі
+                <select name="unit">
+                  <option value="piece">Дана</option>
+                  <option value="kg">Килограмм</option>
+                  <option value="portion">Порция</option>
+                </select>
+              </label>
+            </div>
+            <label>Өнім туралы <span class="optional">міндетті емес</span>
+              <textarea name="description" rows="2" maxlength="2000" placeholder="Құрамы, салмағы немесе басқа мәлімет"></textarea>
+            </label>
+            <div class="fields three">
+              <label>Саны<input name="quantity" type="number" required min="0.001" step="0.001" max="999999999.999" placeholder="3"></label>
+              <label>Бастапқы баға, ₸<input name="regular_price" type="number" required min="0" max="9999999999.99" step="0.01" placeholder="1000"></label>
+              <label>Жеңілдік бағасы, ₸<input name="discount_price" type="number" required min="0" max="9999999999.99" step="0.01" placeholder="700"></label>
+            </div>
+            <label>Жарамдылық мерзімі<input name="expires_at" type="datetime-local" required></label>
+            <div class="publish-actions">
+              <button type="submit" class="button button-primary" disabled>Партияны жариялау <span aria-hidden="true">↗</span></button>
+              <button id="published-link" type="button" class="button button-text" hidden>Каталогта көру <span aria-hidden="true">→</span></button>
+            </div>
+          </form>
+          <p id="publish-feedback" class="feedback" role="status" aria-live="polite" hidden></p>
+        </section>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap footer-inner">
+      <a class="brand brand-footer" href="#catalog" data-view="catalog" aria-label="ObalAi басты беті">
+        <img src="favicon.svg" width="30" height="30" alt="">
+        <span>Obal<span class="brand-ai">Ai</span></span>
+      </a>
+      <p>Азық-түлік ысырабын азайтуға арналған университеттік жоба.</p>
+    </div>
+  </footer>
+
+  <dialog id="auth-dialog" class="auth-dialog" aria-labelledby="auth-title">
+    <div class="auth-top">
+      <img src="favicon.svg" width="40" height="40" alt="">
+      <button class="icon-button" type="button" data-auth-close aria-label="Жабу">×</button>
+    </div>
+    <h2 id="auth-title">Жүйеге кіру</h2>
+    <form id="auth-form" class="stack">
+      <label>Электрондық пошта
+        <input type="email" name="email" autocomplete="username" placeholder="email@example.com" required autofocus>
+      </label>
+      <label>Құпиясөз
+        <input type="password" name="password" autocomplete="current-password" required maxlength="128">
+      </label>
+      <fieldset id="auth-role" hidden>
+        <legend>Аккаунт түрі</legend>
+        <div class="role-options">
+          <label><input type="radio" name="role" value="buyer" checked> Сатып алушы</label>
+          <label><input type="radio" name="role" value="seller"> Сатушы</label>
+        </div>
+      </fieldset>
+      <p id="auth-feedback" class="feedback" role="status" aria-live="polite" hidden></p>
+      <button id="auth-submit" class="button button-primary stretch" type="submit">Кіру</button>
+    </form>
+    <button id="auth-toggle" class="button button-text auth-toggle" type="button">Аккаунт ашу</button>
+  </dialog>
+</body>
+</html>

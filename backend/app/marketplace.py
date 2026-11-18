@@ -37,6 +37,7 @@ class StoreSummary(BaseModel):
 class StoreResponse(StoreSummary):
     id: UUID
     description: str | None
+    is_active: bool
 
 
 class ProductCreate(BaseModel):
@@ -91,6 +92,14 @@ class BatchResponse(BaseModel):
     discount_price: Decimal
     currency: Literal["KZT"]
     expires_at: datetime
+
+
+@router.get("/seller/store", response_model=StoreResponse, tags=["seller"])
+def get_store(seller: User = Depends(require_seller), db: Session = Depends(get_db)):
+    store = db.scalar(select(Store).where(Store.owner_user_id == seller.id))
+    if store is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Seller has no store")
+    return store
 
 
 @router.post("/seller/store", response_model=StoreResponse, status_code=201, tags=["seller"])
