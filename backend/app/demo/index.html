@@ -62,6 +62,11 @@
             <button class="button button-dark" type="submit">Іздеу</button>
           </form>
         </div>
+        <p id="catalog-booking-feedback" class="feedback" role="status" tabindex="-1" hidden></p>
+        <div id="booking-pending" class="feedback booking-pending" hidden>
+          <p>Алдыңғы броньдың нәтижесі әзірге белгісіз.</p>
+          <button id="booking-retry" class="button button-outline button-small" type="button">Броньды тексеру</button>
+        </div>
         <div id="catalog-state" class="catalog-state" role="status" aria-live="polite" hidden></div>
         <div id="catalog-list" class="catalog-list"></div>
         <button id="catalog-more" class="button button-outline catalog-more" type="button" hidden>Тағы көрсету</button>
@@ -169,6 +174,23 @@
       <button id="auth-submit" class="button button-primary stretch" type="submit">Кіру</button>
     </form>
     <button id="auth-toggle" class="button button-text auth-toggle" type="button">Аккаунт ашу</button>
+  </dialog>
+
+  <dialog id="booking-dialog" class="auth-dialog booking-dialog" aria-labelledby="booking-title" aria-describedby="booking-product">
+    <div class="auth-top">
+      <span class="form-symbol" aria-hidden="true">✓</span>
+      <button id="booking-close" class="icon-button" type="button" aria-label="Жабу">×</button>
+    </div>
+    <h2 id="booking-title">Өнімді брондау</h2>
+    <p id="booking-product" class="booking-product"></p>
+    <p id="booking-available" class="panel-help booking-available"></p>
+    <form id="booking-form" class="stack">
+      <label>Саны
+        <input type="number" name="quantity" min="0.001" step="0.001" required autofocus>
+      </label>
+      <p id="booking-feedback" class="feedback" role="status" hidden></p>
+      <button id="booking-submit" class="button button-primary stretch" type="submit">Брондау</button>
+    </form>
   </dialog>
 </body>
 </html>

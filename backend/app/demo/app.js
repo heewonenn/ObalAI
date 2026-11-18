@@ -16,6 +16,14 @@ const catalogState = byId("catalog-state");
 const catalogCount = byId("catalog-count");
 const catalogClear = byId("catalog-clear");
 const catalogMore = byId("catalog-more");
+const catalogBookingFeedback = byId("catalog-booking-feedback");
+const bookingDialog = byId("booking-dialog");
+const bookingForm = byId("booking-form");
+const bookingSubmit = byId("booking-submit");
+const bookingClose = byId("booking-close");
+const bookingFeedback = byId("booking-feedback");
+const bookingPending = byId("booking-pending");
+const bookingRetry = byId("booking-retry");
 const sellerGate = byId("seller-gate");
 const sellerGateMessage = byId("seller-gate-message");
 const sellerWorkspace = byId("seller-workspace");
@@ -41,6 +49,7 @@ const date = new Intl.DateTimeFormat(locales, {
 });
 const tokenKey = "obalai.demo.token";
 const pageSize = 24;
+const bookingAttempts = new Map();
 
 let token = readToken();
 let user = null;
@@ -52,6 +61,9 @@ let catalogOffset = 0;
 let catalogQuery = "";
 let storeRequest = 0;
 let publishedBatch = null;
+let bookingDraft = null;
+let pendingBooking = null;
+let bookingBusy = false;
 
 function readToken() {
   try {
@@ -77,6 +89,8 @@ function saveSession(nextToken, nextUser) {
   publishedLink.hidden = true;
   setFeedback(publishFeedback);
   setFeedback(sellerFeedback);
+  closeBooking();
+  setFeedback(catalogBookingFeedback);
   renderSession();
 }
 
@@ -88,11 +102,12 @@ class ApiError extends Error {
   }
 }
 
-async function api(path, { method = "GET", body, authorized = false, signal } = {}) {
+async function api(path, { method = "GET", body, authorized = false, signal, idempotencyKey } = {}) {
   const requestToken = authorized ? token : null;
   const headers = { Accept: "application/json" };
   if (body !== undefined) headers["Content-Type"] = "application/json";
   if (requestToken) headers.Authorization = `Bearer ${requestToken}`;
+  if (idempotencyKey) headers["Idempotency-Key"] = idempotencyKey;
 
   const response = await fetch(path, {
     method,
@@ -105,6 +120,7 @@ async function api(path, { method = "GET", body, authorized = false, signal } = 
     if (response.status === 401 && requestToken && requestToken === token) {
       saveSession(null, null);
       if (view === "seller") refreshStore();
+      else if (view === "catalog") loadCatalog();
     }
     throw new ApiError(response.status, error.detail);
   }
@@ -122,6 +138,17 @@ function errorText(error) {
       return "Бұл аккаунтта дүкен бар.";
     case "An active store is required":
       return "Партия жариялау үшін белсенді дүкен қажет.";
+    case "Buyer role required":
+      return "Брондау үшін сатып алушы ретінде кіріңіз.";
+    case "Batch not found":
+    case "Batch is not available":
+      return "Бұл партия қазір қолжетімсіз.";
+    case "Not enough stock":
+      return "Қалған өнім саны жеткіліксіз.";
+    case "Order total is too large":
+      return "Бронь сомасы тым үлкен. Өнім санын азайтыңыз.";
+    case "Idempotency key already used for a different reservation":
+      return "Алдыңғы сұрау басқа броньға тиесілі. Қайта бастаңыз.";
     case "Invalid or expired token":
     case "Bearer token required":
       return "Сеанстың уақыты аяқталды. Қайта кіріңіз.";
@@ -155,6 +182,8 @@ function renderSession() {
   signOut.hidden = user === null;
   sessionLabel.hidden = user === null;
   sessionLabel.textContent = user ? `${roles[user.role] || user.email} · ${user.email}` : "";
+  pendingBooking = user?.role === "buyer" ? readBookingAttempt(user.id) : null;
+  bookingPending.hidden = !pendingBooking;
 }
 
 function setAuthMode(mode, role) {
@@ -222,6 +251,120 @@ async function submitAuth(event) {
   if (signedIn) {
     closeAuth();
     if (view === "seller") refreshStore();
+    else if (view === "catalog") loadCatalog();
+  }
+}
+
+function readBookingAttempt(buyerId) {
+  if (bookingAttempts.has(buyerId)) return bookingAttempts.get(buyerId);
+  try {
+    return JSON.parse(sessionStorage.getItem(`obalai.demo.booking.${buyerId}`));
+  } catch {
+    return null;
+  }
+}
+
+function saveBookingAttempt(attempt) {
+  pendingBooking = attempt;
+  bookingPending.hidden = !attempt;
+  bookingAttempts.set(user.id, attempt);
+  try {
+    const key = `obalai.demo.booking.${user.id}`;
+    if (attempt) sessionStorage.setItem(key, JSON.stringify(attempt));
+    else sessionStorage.removeItem(key);
+  } catch {
+    // The current tab can still retry while storage is unavailable.
+  }
+}
+
+function openBooking(draft) {
+  if (user?.role !== "buyer" || !token || bookingBusy) return;
+  if (pendingBooking && draft && pendingBooking.batchId !== draft.batchId) {
+    bookingRetry.focus();
+    return;
+  }
+  bookingDraft = pendingBooking || draft;
+  if (!bookingDraft) return;
+  const input = field(bookingForm, "quantity");
+  const available = Number(bookingDraft.available);
+  const unit = units[bookingDraft.unit] || bookingDraft.unit;
+  input.max = bookingDraft.available;
+  input.value = pendingBooking?.quantity || (available < 1 ? bookingDraft.available : "1");
+  input.readOnly = Boolean(pendingBooking);
+  byId("booking-product").textContent = bookingDraft.name;
+  byId("booking-available").textContent = pendingBooking
+    ? "Алдыңғы сұрауды сол санмен қайталаңыз."
+    : `Қалдығы: ${quantity.format(available)} ${unit}`;
+  bookingSubmit.textContent = pendingBooking ? "Броньды тексеру" : "Брондау";
+  setFeedback(bookingFeedback);
+  if (!bookingDialog.open) bookingDialog.showModal();
+  if (pendingBooking) bookingSubmit.focus();
+  else input.focus();
+}
+
+function closeBooking() {
+  if (bookingDialog.open) bookingDialog.close();
+  bookingDraft = null;
+  bookingForm.reset();
+  setFeedback(bookingFeedback);
+}
+
+async function submitBooking(event) {
+  event.preventDefault();
+  if (bookingBusy || !bookingDraft || !token || user?.role !== "buyer") return;
+  const requestToken = token;
+  const input = field(bookingForm, "quantity");
+  const attempt = pendingBooking || { ...bookingDraft, quantity: input.value, key: crypto.randomUUID() };
+  saveBookingAttempt(attempt);
+  bookingBusy = true;
+  input.readOnly = true;
+  buttonBusy(bookingSubmit, true);
+  buttonBusy(bookingClose, true);
+  buttonBusy(bookingRetry, true);
+  setFeedback(bookingFeedback, "Бронь жіберілуде…");
+  try {
+    const order = await api("/api/orders", {
+      method: "POST",
+      authorized: true,
+      idempotencyKey: attempt.key,
+      signal: AbortSignal.timeout(20000),
+      body: { batch_id: attempt.batchId, quantity: attempt.quantity },
+    });
+    if (requestToken !== token) return;
+    const unit = units[attempt.unit] || attempt.unit;
+    const receipt = `«${attempt.name}» брондалды. №${order.id.slice(0, 8)} · ${quantity.format(order.quantity)} ${unit} · ${money.format(order.total_amount)} ₸.`;
+    saveBookingAttempt(null);
+    closeBooking();
+    setFeedback(catalogBookingFeedback, receipt, "success");
+    if (view === "catalog") {
+      catalogBookingFeedback.focus();
+      loadCatalog();
+    }
+  } catch (error) {
+    if (requestToken !== token) {
+      if (!token && error instanceof ApiError && error.status === 401) {
+        setFeedback(catalogBookingFeedback, "Қайта кіріп, алдыңғы броньды тексеріңіз.", "error");
+      }
+      return;
+    }
+    const rejected = error instanceof ApiError && [400, 403, 404, 409, 422].includes(error.status);
+    if (rejected) {
+      saveBookingAttempt(null);
+      closeBooking();
+      setFeedback(catalogBookingFeedback, errorText(error), "error");
+      if (view === "catalog") {
+        catalogBookingFeedback.focus();
+        loadCatalog();
+      }
+    } else {
+      bookingSubmit.textContent = "Броньды тексеру";
+      setFeedback(bookingFeedback, "Бронь нәтижесі белгісіз. Осы сұрауды қайта жіберіп тексеріңіз.", "error");
+    }
+  } finally {
+    bookingBusy = false;
+    buttonBusy(bookingSubmit, false);
+    buttonBusy(bookingClose, false);
+    buttonBusy(bookingRetry, false);
   }
 }
 
@@ -259,6 +402,19 @@ function productCard(batch) {
     createElement("p", "product-stock", `Қалдығы: ${quantity.format(batch.quantity_available)} ${unit}`),
     createElement("p", "product-expiry", `Жарамды: ${date.format(new Date(batch.expires_at))}`),
   );
+  if (user?.role === "buyer") {
+    const book = createElement("button", "button button-primary button-small product-booking", "Брондау");
+    book.type = "button";
+    book.setAttribute("aria-haspopup", "dialog");
+    book.setAttribute("aria-label", `${batch.product.name} тауарын брондау`);
+    book.addEventListener("click", () => openBooking({
+      batchId: batch.batch_id,
+      name: batch.product.name,
+      unit: batch.product.unit,
+      available: batch.quantity_available,
+    }));
+    copy.append(book);
+  }
   card.append(mark, copy);
   return card;
 }
@@ -424,8 +580,12 @@ function showView(nextView) {
     if (link.dataset.view === view) link.setAttribute("aria-current", "page");
     else link.removeAttribute("aria-current");
   });
-  if (view === "seller") refreshStore();
-  else loadCatalog();
+  if (view === "seller") {
+    closeBooking();
+    refreshStore();
+  } else {
+    loadCatalog();
+  }
 }
 
 function navigate(nextView, jumpToOffers = false) {
@@ -485,6 +645,15 @@ catalogClear.addEventListener("click", (event) => {
   field(catalogSearch, "q").focus();
 });
 catalogMore?.addEventListener("click", () => loadCatalog({ append: true }));
+bookingForm.addEventListener("submit", submitBooking);
+bookingClose.addEventListener("click", () => {
+  if (!bookingBusy) closeBooking();
+});
+bookingDialog.addEventListener("cancel", (event) => {
+  event.preventDefault();
+  if (!bookingBusy) closeBooking();
+});
+bookingRetry.addEventListener("click", () => openBooking());
 storeForm.addEventListener("submit", submitStore);
 batchForm.addEventListener("submit", submitBatch);
 publishedLink.addEventListener("click", (event) => {

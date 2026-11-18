@@ -145,6 +145,7 @@ h1, h2, h3 { line-height: 1.11; }
 .product-price { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; margin-top: 14px; color: var(--green); font-size: 23px; }
 .product-price del { color: var(--muted); font-size: 14px; }
 .product-discount { border-radius: 999px; padding: 2px 8px; background: var(--lime); color: #2e4829; }
+.product-booking { margin-top: 13px; }
 
 .site-footer { border-top: 1px solid var(--line); }
 .footer-inner { min-height: 83px; display: flex; gap: 20px; justify-content: space-between; align-items: center; }
@@ -197,6 +198,9 @@ h1, h2, h3 { line-height: 1.11; }
 .role-options label { display: inline-flex; align-items: center; gap: 6px; padding: 6px 9px; border: 1px solid var(--line); border-radius: 8px; color: var(--green); font-weight: 550; }
 .role-options input { accent-color: var(--green); margin: 0; }
 .auth-toggle { display: flex; margin: 7px auto 0; }
+.booking-dialog .booking-product { font-weight: 700; overflow-wrap: anywhere; }
+.booking-dialog .booking-available { margin: 3px 0 16px; }
+.booking-pending { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
 
 @media (max-width: 1050px) {
   .wrap { width: calc(100% - 56px); }
