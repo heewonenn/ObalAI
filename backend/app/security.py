@@ -31,5 +31,5 @@ def decode_access_token(token: str) -> UUID:
     secret = os.getenv('JWT_SECRET_KEY')
     if not secret:
         raise RuntimeError('JWT_SECRET_KEY must be set in the environment.')
-    payload = jwt.decode(token, secret, algorithms=[ALGORITHM])
+    payload = jwt.decode(token, secret, algorithms=[ALGORITHM], options={'require': ['exp', 'sub']})
     return UUID(payload['sub'])

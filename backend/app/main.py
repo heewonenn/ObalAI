@@ -4,15 +4,16 @@ from typing import Literal
 from uuid import UUID
 
 from fastapi import Depends, FastAPI, HTTPException, status
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from .database import Base, engine, get_db
+from .dependencies import get_current_user
+from .marketplace import router as marketplace_router
 from .models import User
-from .security import create_access_token, decode_access_token, hash_password, verify_password
+from .security import create_access_token, hash_password, verify_password
 
 
 @asynccontextmanager
@@ -23,7 +24,7 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title="ObalAi API", version="0.1.0", lifespan=lifespan)
-bearer_scheme = HTTPBearer(auto_error=False)
+app.include_router(marketplace_router)
 
 
 class RegisterRequest(BaseModel):
@@ -86,17 +87,5 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
 
 
 @app.get("/api/auth/me", response_model=UserResponse)
-def current_user(
-    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
-    db: Session = Depends(get_db),
-):
-    if credentials is None:
-        raise HTTPException(status_code=401, detail="Bearer token required")
-    try:
-        user_id = decode_access_token(credentials.credentials)
-        user = db.get(User, UUID(str(user_id)))
-    except (ValueError, TypeError):
-        user = None
-    if user is None:
-        raise HTTPException(status_code=401, detail="Invalid or expired token")
+def current_user(user: User = Depends(get_current_user)):
     return user
