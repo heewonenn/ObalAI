@@ -8,7 +8,7 @@
   <title>ObalAi — Азық-түлік каталогы</title>
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="styles.css">
-  <script src="app.js" defer></script>
+  <script type="module" src="app.js"></script>
 </head>
 <body>
   <header class="site-header">
@@ -77,7 +77,7 @@
       <div class="seller-heading">
         <a class="back-link" href="#catalog" data-view="catalog"><span aria-hidden="true">←</span> Каталогқа оралу</a>
         <h1 id="seller-title">Сатушы кабинеті</h1>
-        <p>Дүкеніңізді қосып, өнім партиясын каталогта жариялаңыз.</p>
+        <p>Өнім партияларын жариялап, дүкеніңізге түскен тапсырыстарды растаңыз.</p>
       </div>
       <div id="seller-gate" class="surface gate" hidden>
         <div class="form-symbol" aria-hidden="true">↗</div>
@@ -135,6 +135,16 @@
             </div>
           </form>
           <p id="publish-feedback" class="feedback" role="status" aria-live="polite" hidden></p>
+        </section>
+        <section class="surface seller-orders-panel" aria-labelledby="seller-orders-title">
+          <div class="seller-orders-header">
+            <h2 id="seller-orders-title">Тапсырыстар</h2>
+            <button id="seller-orders-refresh" class="button button-outline button-small" type="button">Жаңарту</button>
+          </div>
+          <p id="seller-orders-state" class="seller-orders-state" role="status" hidden></p>
+          <p id="seller-orders-action-feedback" class="feedback" role="status" tabindex="-1" hidden></p>
+          <ul id="seller-orders-list" class="seller-orders-list" role="list"></ul>
+          <button id="seller-orders-more" class="button button-outline button-small seller-orders-more" type="button" hidden>Тағы көрсету</button>
         </section>
       </div>
     </section>

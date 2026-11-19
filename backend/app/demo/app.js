@@ -1,3 +1,5 @@
+import { createSellerOrders } from "./seller-orders.js";
+
 const byId = (id) => document.getElementById(id);
 
 const catalogView = byId("catalog-view");
@@ -76,6 +78,7 @@ function readToken() {
 function saveSession(nextToken, nextUser) {
   token = nextToken;
   user = nextUser;
+  sellerOrders.reset();
   try {
     if (token) sessionStorage.setItem(tokenKey, token);
     else sessionStorage.removeItem(tokenKey);
@@ -485,7 +488,8 @@ async function refreshStore() {
   sellerGate.querySelectorAll("[data-auth]").forEach((button) => {
     button.hidden = Boolean(user);
   });
-  if (!isSeller) return;
+  if (!isSeller || view !== "seller") return;
+  sellerOrders.load();
   storeForm.hidden = true;
   storeDetails.hidden = true;
   batchForm.hidden = true;
@@ -584,6 +588,7 @@ function showView(nextView) {
     closeBooking();
     refreshStore();
   } else {
+    sellerOrders.reset();
     loadCatalog();
   }
 }
@@ -595,6 +600,8 @@ function navigate(nextView, jumpToOffers = false) {
   if (jumpToOffers) byId("offers").scrollIntoView();
   else window.scrollTo(0, 0);
 }
+
+const sellerOrders = createSellerOrders({ api, setFeedback, money, quantity, date, createElement });
 
 document.addEventListener("click", (event) => {
   const trigger = event.target.closest("[data-view], [data-auth], [data-auth-close]");
