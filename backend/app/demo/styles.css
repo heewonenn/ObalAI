@@ -164,6 +164,35 @@ h1, h2, h3 { line-height: 1.11; }
 .gate p { color: var(--muted); }
 .gate-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 19px; }
 .seller-workspace { display: grid; grid-template-columns: minmax(235px, .78fr) minmax(0, 1.55fr); align-items: start; gap: 20px; }
+.seller-orders-panel { grid-column: 1 / -1; min-width: 0; }
+.seller-orders-header {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+  gap: 10px; margin-bottom: 16px;
+}
+.seller-orders-header h2 { margin: 0; }
+.seller-orders-state {
+  padding: 15px 16px; border: 1px dashed var(--line); border-radius: 11px;
+  background: var(--page); color: var(--muted);
+}
+.seller-orders-state[data-tone="error"] { border-color: #d9a596; background: #f7eae5; color: var(--red); }
+.seller-orders-list, .seller-order-items { padding: 0; list-style: none; }
+.seller-orders-list { display: grid; gap: 12px; margin: 0; }
+.seller-order { padding: 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--page); }
+.seller-order-heading {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px;
+}
+.seller-order-heading h3 { font-size: 16px; overflow-wrap: anywhere; }
+.seller-order-status {
+  padding: 3px 10px; border-radius: 999px; background: var(--cream); color: var(--muted);
+  font-size: 13px; font-weight: 650;
+}
+.seller-order-status[data-status="reserved"] { background: #ece8cd; color: #544822; }
+.seller-order-status[data-status="accepted"] { background: #e2ebd7; color: var(--green-dark); }
+.seller-order-meta { margin-top: 3px; color: var(--muted); font-size: 13px; }
+.seller-order-items { display: grid; gap: 5px; margin: 12px 0; font-size: 14px; overflow-wrap: anywhere; }
+.seller-order-footer { padding-top: 10px; border-top: 1px solid var(--line); }
+.seller-orders-state:not([hidden]) ~ .seller-orders-list:not(:empty) { margin-top: 10px; }
+.seller-orders-more { margin-top: 14px; }
 .form-step { color: var(--green); font-size: 12px; letter-spacing: .1em; font-weight: 750; margin-bottom: 7px; text-transform: uppercase; }
 .store-details { display: grid; gap: 5px; padding: 18px; border-radius: 12px; background: #edf0e3; overflow-wrap: anywhere; }
 .store-details p { color: var(--muted); }
