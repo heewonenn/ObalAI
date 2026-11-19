@@ -18,6 +18,7 @@ from .dependencies import get_current_user
 from .marketplace import router as marketplace_router
 from .models import User
 from .security import create_access_token, hash_password, verify_password
+from .seller_orders import router as seller_orders_router
 
 
 @asynccontextmanager
@@ -30,6 +31,7 @@ async def lifespan(_: FastAPI):
 app = FastAPI(title="ObalAi API", version="0.1.0", lifespan=lifespan)
 app.include_router(marketplace_router)
 app.include_router(booking_router)
+app.include_router(seller_orders_router)
 
 
 class RegisterRequest(BaseModel):
