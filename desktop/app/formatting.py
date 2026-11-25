@@ -32,6 +32,13 @@ ORDER_STATUSES: dict[str, str] = {
     "expired": "Мерзімі өткен",
 }
 
+BATCH_STATUSES: dict[str, str] = {
+    "active": "Белсенді",
+    "paused": "Тоқтатылған",
+    "sold_out": "Сатылып кетті",
+    "expired": "Мерзімі өткен",
+}
+
 
 def to_decimal(value: Decimal | str | int | float) -> Decimal:
     if isinstance(value, Decimal):
@@ -99,3 +106,7 @@ def unit_label(unit: str) -> str:
 
 def order_status_label(status: str) -> str:
     return ORDER_STATUSES.get(status, status)
+
+
+def batch_status_label(status: str) -> str:
+    return BATCH_STATUSES.get(status, status)

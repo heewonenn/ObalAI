@@ -230,6 +230,21 @@ QLabel#statusPill[orderStatus="accepted"] {
     color: #183a25;
 }
 
+QLabel#statusPill[batchStatus="active"] {
+    background-color: #e2ebd7;
+    color: #183a25;
+}
+
+QLabel#statusPill[batchStatus="paused"] {
+    background-color: #ece8cd;
+    color: #544822;
+}
+
+QLabel#statusPill[batchStatus="sold_out"], QLabel#statusPill[batchStatus="expired"] {
+    background-color: #f5dfda;
+    color: #8e372d;
+}
+
 QLabel#sellerBookingHint {
     background-color: #f0f1e7;
     border: 1px solid #d9dacb;
