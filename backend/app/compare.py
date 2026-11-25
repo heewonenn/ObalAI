@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session, contains_eager
 from .database import get_db
 from .dependencies import get_current_user
 from .marketplace import BatchResponse
-from .models import Favorite, InventoryBatch, Product, Store, User
+from .models import ActivityEvent, Favorite, InventoryBatch, Product, Store, User
 
 
 router = APIRouter(prefix="/api", tags=["favorites-compare"])
@@ -139,6 +139,7 @@ def add_favorite(
     existing = db.get(Favorite, (buyer.id, batch_id))
     if existing is None:
         db.add(Favorite(user_id=buyer.id, batch_id=batch_id))
+        db.add(ActivityEvent(user_id=buyer.id, event_type="favorite_add", batch_id=batch_id))
         try:
             db.commit()
         except IntegrityError:
@@ -155,6 +156,7 @@ def remove_favorite(
     existing = db.get(Favorite, (buyer.id, batch_id))
     if existing is not None:
         db.delete(existing)
+        db.add(ActivityEvent(user_id=buyer.id, event_type="favorite_remove", batch_id=batch_id))
         db.commit()
     return FavoriteActionResponse(batch_id=batch_id, saved=False)
 

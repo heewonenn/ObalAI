@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from .database import get_db
 from .dependencies import get_current_user
-from .models import InventoryBatch, Order, OrderItem, Product, Store, User
+from .models import ActivityEvent, InventoryBatch, Order, OrderItem, Product, Store, User
 
 
 router = APIRouter(prefix="/api", tags=["orders"])
@@ -127,5 +127,6 @@ def reserve_batch(
     if batch.quantity_available == 0:
         batch.status = "sold_out"
     db.add(order)
+    db.add(ActivityEvent(user_id=buyer.id, event_type="booking_created", batch_id=batch.id))
     db.commit()
     return reservation_response(order, item)

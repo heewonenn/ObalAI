@@ -13,6 +13,7 @@ from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from .booking import router as booking_router
+from .buyer_ai import router as buyer_ai_router
 from .compare import router as compare_router
 from .database import Base, engine, get_db
 from .dependencies import get_current_user
@@ -33,6 +34,7 @@ app = FastAPI(title="ObalAi API", version="0.1.0", lifespan=lifespan)
 app.include_router(marketplace_router)
 app.include_router(booking_router)
 app.include_router(compare_router)
+app.include_router(buyer_ai_router)
 app.include_router(seller_orders_router)
 
 

@@ -188,3 +188,22 @@ class OrderItem(Base):
     created_at: Mapped[datetime] = created_timestamp()
     order: Mapped[Order] = relationship(back_populates='items')
     batch: Mapped[InventoryBatch] = relationship(back_populates='order_items')
+
+
+class ActivityEvent(Base):
+    __tablename__ = 'activity_events'
+    __table_args__ = (
+        CheckConstraint(
+            "event_type IN ('view_batch', 'favorite_add', 'favorite_remove', 'booking_created', 'catalog_search')",
+            name='ck_activity_events_type',
+        ),
+        Index('ix_activity_events_user_created_at', 'user_id', text('created_at DESC')),
+        Index('ix_activity_events_type_created_at', 'event_type', text('created_at DESC')),
+    )
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
+    event_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    batch_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey('inventory_batches.id', ondelete='SET NULL'))
+    query_text: Mapped[str | None] = mapped_column(String(180))
+    created_at: Mapped[datetime] = created_timestamp()

@@ -32,6 +32,11 @@ const bookingClose = byId("booking-close");
 const bookingFeedback = byId("booking-feedback");
 const bookingPending = byId("booking-pending");
 const bookingRetry = byId("booking-retry");
+const aiSection = byId("ai-recommendations");
+const aiMeta = byId("ai-meta");
+const aiState = byId("ai-state");
+const aiList = byId("ai-list");
+const aiRefresh = byId("ai-refresh");
 const sellerGate = byId("seller-gate");
 const sellerGateMessage = byId("seller-gate-message");
 const sellerWorkspace = byId("seller-workspace");
@@ -195,6 +200,54 @@ function renderSession() {
   sessionLabel.textContent = user ? `${roles[user.role] || user.email} · ${user.email}` : "";
   pendingBooking = user?.role === "buyer" ? readBookingAttempt(user.id) : null;
   bookingPending.hidden = !pendingBooking;
+  loadAiRecommendations();
+}
+
+async function loadAiRecommendations() {
+  if (!aiSection) return;
+  const isBuyer = user?.role === "buyer" && Boolean(token);
+  aiSection.hidden = !isBuyer;
+  aiList.replaceChildren();
+  if (!isBuyer) {
+    setFeedback(aiState);
+    aiMeta.textContent = "";
+    return;
+  }
+  setFeedback(aiState, "AI ұсыныстары есептелуде…");
+  try {
+    const data = await api("/api/ai/recommendations?limit=3", { authorized: true });
+    aiMeta.textContent = `Модель: ${data.model_version} · Нақты әрекеттер: ${data.current_interactions}/${data.required_interactions}`;
+    if (data.status !== "ok") {
+      setFeedback(aiState, data.reason || "Деректер жеткіліксіз (insufficient_data).");
+      return;
+    }
+    setFeedback(aiState);
+    aiList.append(...data.items.map((rec) => {
+      const batch = rec.batch;
+      const unit = units[batch.product.unit] || batch.product.unit;
+      const card = createElement("article", "ai-card");
+      const top = createElement("div", "ai-card-top");
+      top.append(createElement("span", "ai-badge", `AI · ${Number(rec.score).toFixed(2)}`));
+      card.append(
+        top,
+        createElement("h4", "", batch.product.name),
+        createElement("p", "product-meta", `${batch.store.name} · ${money.format(batch.discount_price)} ₸ · ${quantity.format(batch.quantity_available)} ${unit}`),
+        createElement("p", "ai-explanation", rec.explanation),
+      );
+      const book = createElement("button", "button button-primary button-small product-booking", "Брондау");
+      book.type = "button";
+      book.addEventListener("click", () => openBooking({
+        batchId: batch.batch_id,
+        name: batch.product.name,
+        unit: batch.product.unit,
+        available: batch.quantity_available,
+      }));
+      card.append(book);
+      return card;
+    }));
+  } catch (error) {
+    setFeedback(aiState, errorText(error), "error");
+  }
 }
 
 function setAuthMode(mode, role) {
@@ -376,6 +429,11 @@ function openBooking(draft) {
     );
   }
   if (!bookingDialog.open) bookingDialog.showModal();
+  if (isBuyer && !pendingBooking && bookingDraft?.batchId) {
+    api(`/api/ai/events/view/${bookingDraft.batchId}`, { method: "POST", authorized: true })
+      .then(() => loadAiRecommendations())
+      .catch(() => {});
+  }
   if (isBuyer && pendingBooking) bookingSubmit.focus();
   else input.focus();
 }
@@ -435,6 +493,7 @@ async function submitBooking(event) {
     if (view === "catalog") {
       catalogBookingFeedback.focus();
       loadCatalog();
+      loadAiRecommendations();
     }
   } catch (error) {
     if (requestToken !== token) {
@@ -798,6 +857,7 @@ bookingDialog.addEventListener("cancel", (event) => {
   if (!bookingBusy) closeBooking();
 });
 bookingRetry.addEventListener("click", () => openBooking());
+aiRefresh?.addEventListener("click", () => loadAiRecommendations());
 storeForm.addEventListener("submit", submitStore);
 batchForm.addEventListener("submit", submitBatch);
 publishedLink.addEventListener("click", (event) => {

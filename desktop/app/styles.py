@@ -432,6 +432,27 @@ QLabel#wsmScoreLabel {
     font-weight: 700;
 }
 
+QFrame#aiPanel {
+    background-color: #eef3e3;
+    border: 1px solid #c9d5b6;
+    border-radius: 18px;
+}
+
+QFrame#aiCard {
+    background-color: #fdfcf8;
+    border: 1px solid #d5dcc7;
+    border-radius: 14px;
+}
+
+QLabel#aiBadge {
+    background-color: #244a31;
+    color: #ddeb9b;
+    border-radius: 10px;
+    padding: 3px 9px;
+    font-size: 12px;
+    font-weight: 700;
+}
+
 /* Scrollbar polish */
 QScrollBar:vertical {
     background: transparent;
