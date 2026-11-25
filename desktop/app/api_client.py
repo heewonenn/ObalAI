@@ -42,6 +42,10 @@ def translate_api_error(error: Exception) -> str:
         "Batch is not available": "Бұл партия қазір қолжетімсіз.",
         "Not enough stock": "Қалған өнім саны жеткіліксіз.",
         "Order total is too large": "Бронь сомасы тым үлкен. Өнім санын азайтыңыз.",
+        "All cart items must belong to the same store": (
+            "Бір тапсырысқа тек бір дүкеннің өнімдері кіреді. "
+            "Басқа дүкеннен тапсырыс беру үшін себетті тазартыңыз."
+        ),
         "Idempotency key already used for a different reservation": (
             "Алдыңғы сұрау басқа броньға тиесілі. Қайта бастаңыз."
         ),
@@ -240,6 +244,29 @@ class ObalApiClient:
             authorized=True,
             idempotency_key=idempotency_key,
             json_body={"batch_id": batch_id, "quantity": quantity},
+        )
+
+    def create_cart_order(
+        self,
+        *,
+        items: list[dict[str, str]],
+        fulfillment_method: str,
+        delivery_address: str | None,
+        idempotency_key: str,
+    ) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "items": items,
+            "fulfillment_method": fulfillment_method,
+            "payment_method": "pay_at_pickup",
+        }
+        if fulfillment_method == "delivery":
+            payload["delivery_address"] = (delivery_address or "").strip()
+        return self._request(
+            "POST",
+            "/api/orders",
+            authorized=True,
+            idempotency_key=idempotency_key,
+            json_body=payload,
         )
 
     def get_seller_store(self) -> dict[str, Any] | None:

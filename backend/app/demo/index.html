@@ -22,6 +22,7 @@
         <a href="#seller" data-view="seller">Сатушыға</a>
       </nav>
       <div class="session">
+        <button id="nav-cart" class="button button-small cart-nav" type="button" data-view="checkout">Себет (0)</button>
         <span id="session-label" class="session-label" hidden></span>
         <button id="sign-in" class="button button-outline button-small" type="button" data-auth="login">
           Кіру <span aria-hidden="true">↗</span>
@@ -101,6 +102,180 @@
         <button id="catalog-more" class="button button-outline catalog-more" type="button" hidden>Тағы көрсету</button>
       </section>
     </div>
+
+    <section id="detail-view" class="seller-view" aria-labelledby="detail-title" hidden>
+      <div class="seller-heading">
+        <a class="back-link" href="#catalog" data-view="catalog"><span aria-hidden="true">←</span> Каталогқа оралу</a>
+      </div>
+      <p id="detail-feedback" class="feedback" role="status" hidden></p>
+      <div class="checkout-grid">
+        <article class="surface detail-card">
+          <div class="detail-badges">
+            <span id="detail-unit" class="detail-unit"></span>
+            <span id="detail-discount" class="product-discount" hidden></span>
+          </div>
+          <h1 id="detail-title" class="detail-title"></h1>
+          <p id="detail-description" class="detail-description"></p>
+          <div class="store-details">
+            <strong>Маңызды ақпарат</strong>
+            <p id="detail-expiry"></p>
+            <p id="detail-stock"></p>
+            <p>Брондалған өнім дүкенде алып кету немесе жеткізу арқылы беріледі. Төлем алған кезде жасалады.</p>
+          </div>
+        </article>
+        <aside class="surface detail-card">
+          <div class="product-price">
+            <strong id="detail-price"></strong>
+            <del id="detail-old-price" hidden></del>
+          </div>
+          <p id="detail-savings" class="savings-text" hidden></p>
+          <div class="store-details">
+            <div class="form-symbol" aria-hidden="true">⌂</div>
+            <p class="form-step">Алып кету мекенжайы</p>
+            <strong id="detail-store-name"></strong>
+            <p id="detail-store-address"></p>
+            <p>Алып кету: Тегін · Жеткізу мекенжайын себетте таңдауға болады.</p>
+          </div>
+          <div id="detail-buyer-controls" class="stack">
+            <label>Саны <span id="detail-qty-unit"></span>
+              <input id="detail-qty" type="number" min="0.001" step="0.001" value="1">
+            </label>
+            <button id="detail-add-cart" class="button button-outline stretch" type="button">Себетке қосу</button>
+            <button id="detail-buy-now" class="button button-primary stretch" type="button">Бірден рәсімдеу →</button>
+          </div>
+          <div id="detail-seller-note" class="stack" hidden>
+            <p class="product-booking-hint">Брондау тек сатып алушыларға қолжетімді.</p>
+            <button id="detail-switch-buyer" class="button button-outline stretch" type="button">Сатып алушы ретінде кіру</button>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <section id="checkout-view" class="seller-view" aria-labelledby="checkout-title" hidden>
+      <div class="seller-heading">
+        <a class="back-link" href="#catalog" data-view="catalog"><span aria-hidden="true">←</span> Каталогқа оралу</a>
+        <h1 id="checkout-title">Себет және тапсырысты рәсімдеу</h1>
+        <div class="stepper" aria-label="Рәсімдеу қадамдары">
+          <span class="step-chip done">1. Себет</span>
+          <span aria-hidden="true">→</span>
+          <span class="step-chip active">2. Рәсімдеу</span>
+          <span aria-hidden="true">→</span>
+          <span class="step-chip">3. Растау</span>
+        </div>
+      </div>
+      <p id="checkout-feedback" class="feedback" role="status" tabindex="-1" hidden></p>
+      <div id="checkout-empty" class="catalog-state" hidden>
+        <h3>Себетіңіз әзірге бос</h3>
+        <p>Каталогтан өнімдерді таңдап, себетке қосыңыз.</p>
+        <button class="button button-primary" type="button" data-view="catalog" style="margin-top:14px">Каталогқа өту</button>
+      </div>
+      <div id="checkout-body" class="checkout-grid" hidden>
+        <div class="stack">
+          <section class="surface">
+            <div class="seller-orders-header">
+              <div>
+                <p class="form-step">01 / Себеттегі өнімдер</p>
+                <h2>Таңдалған партиялар</h2>
+              </div>
+              <button id="checkout-clear" class="button button-text button-small" type="button">Тазарту</button>
+            </div>
+            <ul id="checkout-items" class="checkout-items" role="list"></ul>
+          </section>
+
+          <section class="surface stack">
+            <p class="form-step">02 / Алу тәсілі және мекенжай</p>
+            <div class="option-grid">
+              <label class="option-card">
+                <input type="radio" name="fulfillment_method" value="pickup" checked>
+                <span><strong>Алып кету · Тегін</strong><small>Дүкеннен өзіңіз барып аласыз</small></span>
+              </label>
+              <label class="option-card">
+                <input type="radio" name="fulfillment_method" value="delivery">
+                <span><strong>Жеткізу</strong><small>Көрсетілген мекенжайға жеткізу</small></span>
+              </label>
+            </div>
+            <div id="checkout-pickup-box" class="store-details">
+              <p class="form-step">Алып кету мекенжайы</p>
+              <strong id="checkout-pickup-store"></strong>
+              <p id="checkout-pickup-address"></p>
+              <p>Тапсырыс расталған соң кассада тапсырыс кодын көрсетіңіз.</p>
+            </div>
+            <label id="checkout-delivery-box" hidden>Жеткізу мекенжайы
+              <input id="checkout-delivery-address" type="text" maxlength="500" placeholder="Мысалы: Алматы, Абай даңғылы, 15, 24-пәтер">
+            </label>
+          </section>
+
+          <section class="surface stack">
+            <p class="form-step">03 / Төлем тәсілі</p>
+            <label class="option-card">
+              <input type="radio" name="payment_method" value="pay_at_pickup" checked>
+              <span><strong>Алып кету / жеткізу кезінде төлеу</strong><small>Қолма-қол немесе дүкен терминалы арқылы төлейсіз</small></span>
+            </label>
+            <label class="option-card disabled-option">
+              <input type="radio" name="payment_method" value="online" disabled>
+              <span><strong>Онлайн банктік карта (қосылу кезеңінде)</strong><small>Нақты төлем провайдері қосылған соң қолжетімді болады.</small></span>
+            </label>
+          </section>
+        </div>
+
+        <aside class="surface stack checkout-summary">
+          <h2>Тапсырыс қорытындысы</h2>
+          <div class="summary-row"><span>Бастапқы баға:</span><span id="sum-original">0 ₸</span></div>
+          <div class="summary-row"><span>Сіздің үнеміңіз:</span><span id="sum-savings" class="savings-text">0 ₸</span></div>
+          <div class="summary-row"><span>Алу тәсілі:</span><span id="sum-fulfill">Алып кету (Тегін)</span></div>
+          <hr class="summary-line">
+          <div class="summary-row summary-total"><strong>Барлығы:</strong><strong id="sum-total">0 ₸</strong></div>
+          <p id="checkout-auth-notice" class="product-booking-hint" hidden></p>
+          <div id="checkout-auth-actions" class="booking-auth-actions" hidden>
+            <button id="checkout-login" class="button button-primary stretch" type="button">Кіру (себет сақталады)</button>
+            <button id="checkout-register" class="button button-outline stretch" type="button">Сатып алушы болып тіркелу</button>
+          </div>
+          <button id="checkout-confirm" class="button button-primary stretch" type="button">Броньды растау →</button>
+          <p class="panel-help">Бронь жасалғаннан кейін қалдық автоматты түрде сізге бекітіледі.</p>
+        </aside>
+      </div>
+    </section>
+
+    <section id="confirmation-view" class="seller-view" aria-labelledby="confirm-title" hidden>
+      <div class="stepper" aria-label="Рәсімдеу қадамдары">
+        <span class="step-chip done">1. Себет</span>
+        <span aria-hidden="true">→</span>
+        <span class="step-chip done">2. Рәсімдеу</span>
+        <span aria-hidden="true">→</span>
+        <span class="step-chip active">3. Растау</span>
+      </div>
+      <div class="ai-panel confirm-banner">
+        <div class="form-symbol" aria-hidden="true">✓</div>
+        <div>
+          <h1 id="confirm-title" class="detail-title">Бронь сәтті рәсімделді!</h1>
+          <p class="panel-help">Төмендегі тапсырыс кодын дүкенде көрсетіңіз.</p>
+        </div>
+      </div>
+      <article class="surface confirm-card">
+        <div class="confirm-qr-col">
+          <div id="confirm-qr" class="confirm-qr" aria-hidden="true"></div>
+          <strong id="confirm-code" class="pickup-code"></strong>
+          <span id="confirm-status" class="seller-order-status" data-status="reserved">Брондалған</span>
+        </div>
+        <div class="stack">
+          <h2 id="confirm-store"></h2>
+          <p id="confirm-address"></p>
+          <p class="panel-help">Төлем тәсілі: Алып кету / жеткізу кезінде төлеу</p>
+          <ul id="confirm-items" class="seller-order-items" role="list"></ul>
+          <p id="confirm-total" class="product-price"></p>
+          <p id="confirm-savings" class="savings-text" hidden></p>
+          <div class="store-details">
+            <strong>Тапсырысты алу қадамдары</strong>
+            <p>1. Сатушы тапсырысты растағанын күтіңіз.</p>
+            <p>2. Көрсетілген мекенжайға барып, тапсырыс кодын көрсетіңіз.</p>
+            <p>3. Өнімді алып, орнында төлеңіз.</p>
+          </div>
+          <div>
+            <button class="button button-primary" type="button" data-view="catalog">Каталогқа оралу</button>
+          </div>
+        </div>
+      </article>
+    </section>
 
     <section id="seller-view" class="seller-view" aria-labelledby="seller-title" hidden>
       <div class="seller-heading">

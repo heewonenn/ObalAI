@@ -163,9 +163,9 @@ class ProductCard(QFrame):
             self.action_button.clicked.connect(lambda: on_switch_to_buyer(draft))
             body_layout.addWidget(self.action_button)
         else:
-            self.action_button = QPushButton("Брондау")
+            self.action_button = QPushButton("Себетке қосу")
             self.action_button.setProperty("variant", "primary")
-            self.action_button.clicked.connect(lambda: on_book(draft))
+            self.action_button.clicked.connect(lambda _=False, b=batch: on_book(b))
             body_layout.addWidget(self.action_button)
 
         secondary_row = QHBoxLayout()
@@ -702,15 +702,9 @@ class CatalogView(QWidget):
             cl.addWidget(expl)
 
             cl.addStretch(1)
-            draft = BookingDraft(
-                batch_id=str(batch["batch_id"]),
-                name=product["name"],
-                unit=product["unit"],
-                available=to_decimal(batch["quantity_available"]),
-            )
-            book_btn = QPushButton("Брондау")
+            book_btn = QPushButton("Себетке қосу")
             book_btn.setProperty("variant", "primary")
-            book_btn.clicked.connect(lambda _=False, d=draft: self.on_book(d))
+            book_btn.clicked.connect(lambda _=False, b=batch: self.on_book(b))
             cl.addWidget(book_btn)
 
             self.ai_cards_layout.addWidget(card, stretch=1)
