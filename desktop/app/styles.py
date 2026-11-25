@@ -453,6 +453,73 @@ QLabel#aiBadge {
     font-weight: 700;
 }
 
+QLabel#stepperChip {
+    background-color: #efede0;
+    color: #565f52;
+    border: 1px solid #d9dacb;
+    border-radius: 14px;
+    padding: 5px 14px;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+QLabel#stepperChip[active="true"] {
+    background-color: #244a31;
+    border-color: #244a31;
+    color: #ffffff;
+    font-weight: 700;
+}
+
+QLabel#stepperChip[done="true"] {
+    background-color: #e2ebd7;
+    border-color: #b7cca0;
+    color: #183a25;
+}
+
+QLabel#savingsText {
+    color: #183a25;
+    font-weight: 700;
+}
+
+QLabel#pickupCodeLabel {
+    font-family: "Consolas", "Courier New", monospace;
+    font-size: 22px;
+    font-weight: 700;
+    color: #244a31;
+    letter-spacing: 2px;
+}
+
+QFrame#optionCard {
+    background-color: #fdfcf8;
+    border: 1px solid #d2d7c6;
+    border-radius: 12px;
+}
+
+QFrame#optionCard[disabledOption="true"] {
+    background-color: #f2f1e8;
+    border-style: dashed;
+}
+
+QPushButton#cartNavButton {
+    background-color: #eef3e3;
+    border: 1px solid #c3d0b0;
+    color: #244a31;
+    border-radius: 18px;
+    padding: 7px 14px;
+    font-weight: 700;
+}
+
+QPushButton#cartNavButton:hover {
+    background-color: #e2ebd7;
+    border-color: #244a31;
+}
+
+QPushButton#cartNavButton[active="true"] {
+    background-color: #244a31;
+    border-color: #244a31;
+    color: #ffffff;
+}
+
 /* Scrollbar polish */
 QScrollBar:vertical {
     background: transparent;

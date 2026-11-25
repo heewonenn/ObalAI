@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from decimal import Decimal
 import sys
+from typing import Any
 
 from PySide6.QtWidgets import (
     QApplication,
@@ -16,7 +18,8 @@ from PySide6.QtWidgets import (
 
 from .api_client import ApiError, ObalApiClient, translate_api_error
 from .catalog_view import CatalogView
-from .compare_dialogs import ProductDetailDialog, WsmCompareDialog
+from .checkout_views import CheckoutView, OrderConfirmationView, ProductDetailView
+from .compare_dialogs import WsmCompareDialog
 from .dialogs import AuthDialog, BookingAttempt, BookingDraft, BookingDialog
 from .formatting import format_money, format_quantity, role_label, to_decimal, unit_label
 from .seller_view import SellerView
@@ -25,7 +28,7 @@ from .widgets import BrandLogo, load_app_icon, repolish
 
 
 class MainWindow(QMainWindow):
-    """Main ObalAi PySide6 application window."""
+    """Main ObalAi PySide6 multi-screen desktop application."""
 
     def __init__(self, api: ObalApiClient | None = None) -> None:
         super().__init__()
@@ -34,19 +37,20 @@ class MainWindow(QMainWindow):
 
         self.current_view = "catalog"
         self.deferred_booking: BookingDraft | None = None
+        self.return_to_checkout_after_auth = False
         self.pending_bookings: dict[str, BookingAttempt] = {}
 
         self.setWindowTitle("ObalAi — Азық-түлік каталогы")
         self.setWindowIcon(load_app_icon())
-        self.resize(1200, 820)
-        self.setMinimumSize(640, 620)
+        self.resize(1220, 840)
+        self.setMinimumSize(680, 620)
 
         central = QWidget()
         layout = QVBoxLayout(central)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
-        # Header matching the site's 3-column layout
+        # Header
         header = QFrame()
         header.setObjectName("headerBar")
         header_outer = QHBoxLayout(header)
@@ -56,7 +60,7 @@ class MainWindow(QMainWindow):
         header_inner.setMaximumWidth(1160)
         header_layout = QHBoxLayout(header_inner)
         header_layout.setContentsMargins(0, 8, 0, 8)
-        header_layout.setSpacing(24)
+        header_layout.setSpacing(20)
 
         header_layout.addWidget(BrandLogo(icon_size=36, font_size=23))
         header_layout.addStretch(1)
@@ -72,6 +76,12 @@ class MainWindow(QMainWindow):
         header_layout.addWidget(self.nav_seller_btn)
 
         header_layout.addStretch(1)
+
+        self.nav_cart_btn = QPushButton("Себет (0)")
+        self.nav_cart_btn.setObjectName("cartNavButton")
+        self.nav_cart_btn.setProperty("active", "false")
+        self.nav_cart_btn.clicked.connect(lambda: self.show_view("checkout"))
+        header_layout.addWidget(self.nav_cart_btn)
 
         self.session_label = QLabel()
         self.session_label.setObjectName("sessionBadge")
@@ -93,11 +103,11 @@ class MainWindow(QMainWindow):
 
         layout.addWidget(header)
 
-        # Stacked views
+        # Stacked views: Catalog, Product Detail, Cart & Checkout, Order Confirmation, Seller
         self.stack = QStackedWidget()
         self.catalog_view = CatalogView(
             self.api,
-            on_book=self.open_booking,
+            on_book=self._add_batch_from_catalog,
             on_switch_to_buyer=self._start_buyer_switch_for_booking,
             on_retry_pending=self._retry_pending_booking,
             on_open_seller=lambda: self.show_view("seller"),
@@ -105,23 +115,49 @@ class MainWindow(QMainWindow):
             on_open_compare=self.open_wsm_compare,
             on_toggle_favorite=self.toggle_favorite,
         )
+        self.detail_view = ProductDetailView(
+            self.api,
+            on_back=lambda: self.show_view("catalog"),
+            on_add_to_cart=self._add_to_cart,
+            on_switch_to_buyer=self._start_buyer_switch_for_batch,
+            on_toggle_favorite=self._toggle_favorite_from_detail,
+        )
+        self.checkout_view = CheckoutView(
+            self.api,
+            on_back_to_catalog=lambda: self.show_view("catalog"),
+            on_request_buyer_auth=self._start_auth_from_checkout,
+            on_order_confirmed=self._handle_order_confirmed,
+            on_cart_changed=self._update_cart_badge,
+        )
+        self.confirmation_view = OrderConfirmationView(
+            on_back_to_catalog=lambda: self.show_view("catalog"),
+        )
         self.seller_view = SellerView(
             self.api,
             on_request_auth=lambda mode, role: self.open_auth(mode, default_role=role),
             on_view_published=self._view_published_product,
             on_back_to_catalog=lambda: self.show_view("catalog"),
         )
+
         self.stack.addWidget(self.catalog_view)
+        self.stack.addWidget(self.detail_view)
+        self.stack.addWidget(self.checkout_view)
+        self.stack.addWidget(self.confirmation_view)
         self.stack.addWidget(self.seller_view)
         layout.addWidget(self.stack, stretch=1)
 
         self.setCentralWidget(central)
         self._render_session()
+        self._update_cart_badge()
         self.show_view("catalog")
 
     def closeEvent(self, event) -> None:
         self.api.close()
         super().closeEvent(event)
+
+    def _update_cart_badge(self) -> None:
+        count = self.checkout_view.item_count()
+        self.nav_cart_btn.setText(f"Себет ({count})")
 
     def _current_pending_attempt(self) -> BookingAttempt | None:
         user = self.api.user
@@ -151,12 +187,14 @@ class MainWindow(QMainWindow):
         else:
             self.session_label.clear()
         self.catalog_view.set_pending_attempt(self._current_pending_attempt())
+        self.checkout_view._sync_auth_controls()
         self._sync_favorites()
 
     def _sync_favorites(self) -> None:
         user = self.api.user
         if not user or user.get("role") != "buyer" or not self.api.token:
             self.catalog_view.set_favorites(set())
+            self.catalog_view.load_ai_recommendations()
             return
         try:
             items = self.api.list_favorites()
@@ -183,7 +221,7 @@ class MainWindow(QMainWindow):
             self.catalog_view.set_booking_feedback(translate_api_error(exc), "error")
             return currently_saved
 
-    def open_product_detail(self, batch: dict) -> None:
+    def open_product_detail(self, batch: dict[str, Any]) -> None:
         bid = str(batch["batch_id"])
         fresh = batch
         try:
@@ -196,16 +234,8 @@ class MainWindow(QMainWindow):
                 self.catalog_view.load_ai_recommendations()
             except ApiError:
                 pass
-        dialog = ProductDetailDialog(
-            fresh,
-            user=self.api.user,
-            is_favorite=bid in self.catalog_view.favorite_ids,
-            on_book=self.open_booking,
-            on_switch_to_buyer=self._start_buyer_switch_for_booking,
-            on_toggle_favorite=self._toggle_favorite_from_detail,
-            parent=self,
-        )
-        dialog.exec()
+        self.detail_view.set_batch(fresh, is_favorite=bid in self.catalog_view.favorite_ids)
+        self.show_view("detail")
 
     def _toggle_favorite_from_detail(self, batch_id: str) -> bool:
         saved = self.toggle_favorite(batch_id)
@@ -216,18 +246,54 @@ class MainWindow(QMainWindow):
         self.catalog_view.refresh_card_actions()
         return saved
 
+    def _add_batch_from_catalog(self, batch: dict[str, Any]) -> None:
+        self._add_to_cart(batch, None, False)
+
+    def _add_to_cart(self, batch: dict[str, Any], quantity: Decimal | None, go_checkout: bool) -> None:
+        ok, message = self.checkout_view.add_batch(batch, quantity=quantity)
+        if not ok:
+            if self.current_view == "detail":
+                self.detail_view.feedback.set_message(message, "error")
+            else:
+                self.catalog_view.set_booking_feedback(message, "error")
+            return
+        if go_checkout:
+            self.show_view("checkout")
+        elif self.current_view == "catalog":
+            self.catalog_view.set_booking_feedback(
+                f"{message} Рәсімдеу үшін жоғарыдағы «Себет ({self.checkout_view.item_count()})» түймесін басыңыз.",
+                "success",
+            )
+
+    def _add_draft_and_checkout(self, draft: BookingDraft) -> None:
+        fresh = self.catalog_view.find_batch(draft.batch_id)
+        if fresh is None:
+            try:
+                fresh = self.api.get_catalog_batch(draft.batch_id)
+            except ApiError as exc:
+                self.catalog_view.set_booking_feedback(translate_api_error(exc), "error")
+                return
+        self._add_to_cart(fresh, draft.quantity, True)
+
     def open_wsm_compare(self, batch_ids: list[str]) -> None:
         dialog = WsmCompareDialog(
             self.api,
             batch_ids=batch_ids,
-            on_book=self.open_booking,
+            on_book=self._add_draft_and_checkout,
             on_switch_to_buyer=self._start_buyer_switch_for_booking,
             parent=self,
         )
         dialog.exec()
 
+    def _handle_order_confirmed(self, order: dict[str, Any]) -> None:
+        self.confirmation_view.set_order(order)
+        self.show_view("confirmation")
+        self.catalog_view.load_catalog(append=False)
+        self.catalog_view.load_ai_recommendations()
+
     def _handle_unauthorized(self) -> None:
         self.deferred_booking = None
+        self.return_to_checkout_after_auth = False
         self.seller_view.reset_state()
         self._render_session()
         if self.current_view == "seller":
@@ -238,29 +304,49 @@ class MainWindow(QMainWindow):
     def logout(self) -> None:
         self.api.clear_session()
         self.deferred_booking = None
+        self.return_to_checkout_after_auth = False
         self.seller_view.reset_state()
         self.catalog_view.set_booking_feedback()
         self._render_session()
         self.show_view("catalog")
 
     def show_view(self, view_name: str) -> None:
-        self.current_view = "seller" if view_name == "seller" else "catalog"
-        is_seller_tab = self.current_view == "seller"
-        self.stack.setCurrentWidget(self.seller_view if is_seller_tab else self.catalog_view)
+        valid = {"catalog", "detail", "checkout", "confirmation", "seller"}
+        self.current_view = view_name if view_name in valid else "catalog"
+        view_map = {
+            "catalog": self.catalog_view,
+            "detail": self.detail_view,
+            "checkout": self.checkout_view,
+            "confirmation": self.confirmation_view,
+            "seller": self.seller_view,
+        }
+        self.stack.setCurrentWidget(view_map[self.current_view])
 
-        self.nav_catalog_btn.setProperty("active", "false" if is_seller_tab else "true")
-        self.nav_seller_btn.setProperty("active", "true" if is_seller_tab else "false")
+        self.nav_catalog_btn.setProperty("active", "true" if self.current_view in {"catalog", "detail"} else "false")
+        self.nav_seller_btn.setProperty("active", "true" if self.current_view == "seller" else "false")
+        self.nav_cart_btn.setProperty("active", "true" if self.current_view in {"checkout", "confirmation"} else "false")
         repolish(self.nav_catalog_btn)
         repolish(self.nav_seller_btn)
+        repolish(self.nav_cart_btn)
 
-        if is_seller_tab:
+        if self.current_view == "seller":
             self.seller_view.refresh()
-        else:
+        elif self.current_view == "catalog":
             self.catalog_view.load_catalog(append=False)
+        elif self.current_view == "checkout":
+            self.checkout_view.render_cart()
 
     def _view_published_product(self, product_name: str) -> None:
         self.catalog_view.set_search_query(product_name)
         self.show_view("catalog")
+
+    def _start_auth_from_checkout(self, mode: str) -> None:
+        self.return_to_checkout_after_auth = True
+        context = (
+            "Себеттегі тапсырысты рәсімдеуді жалғастыру үшін сатып алушы ретінде кіріңіз немесе тіркеліңіз. "
+            "Таңдалған өнімдер сақталады."
+        )
+        self.open_auth(mode, default_role="buyer", context_message=context, preserve_deferred=True)
 
     def open_auth(
         self,
@@ -272,6 +358,7 @@ class MainWindow(QMainWindow):
     ) -> bool:
         if not preserve_deferred:
             self.deferred_booking = None
+            self.return_to_checkout_after_auth = False
         role = default_role or ("seller" if self.current_view == "seller" else "buyer")
         dialog = AuthDialog(
             self.api,
@@ -284,11 +371,17 @@ class MainWindow(QMainWindow):
         if not accepted:
             if preserve_deferred:
                 self.deferred_booking = None
+                self.return_to_checkout_after_auth = False
             return False
 
         self.seller_view.reset_state()
         self.catalog_view.set_booking_feedback()
         self._render_session()
+
+        if self.return_to_checkout_after_auth:
+            self.return_to_checkout_after_auth = False
+            self.show_view("checkout")
+            return True
 
         if self.deferred_booking is not None:
             self._resume_deferred_booking()
@@ -296,14 +389,28 @@ class MainWindow(QMainWindow):
 
         if self.current_view == "seller":
             self.seller_view.refresh()
+        elif self.current_view == "detail" and self.detail_view.batch is not None:
+            bid = str(self.detail_view.batch["batch_id"])
+            self.detail_view.set_batch(self.detail_view.batch, is_favorite=bid in self.catalog_view.favorite_ids)
+        elif self.current_view == "checkout":
+            self.checkout_view.render_cart()
         else:
             self.catalog_view.load_catalog(append=False)
         return True
 
+    def _start_buyer_switch_for_batch(self, batch: dict[str, Any]) -> None:
+        draft = BookingDraft(
+            batch_id=str(batch["batch_id"]),
+            name=batch["product"]["name"],
+            unit=batch["product"]["unit"],
+            available=to_decimal(batch["quantity_available"]),
+        )
+        self._start_buyer_switch_for_booking(draft)
+
     def _start_buyer_switch_for_booking(self, draft: BookingDraft) -> None:
         self.deferred_booking = draft
         context = (
-            f"«{draft.name}» өнімін брондау үшін сатып алушы аккаунтына кіріңіз немесе тіркеліңіз. "
+            f"«{draft.name}» өнімін себетке қосу үшін сатып алушы аккаунтына кіріңіз немесе тіркеліңіз. "
             "Таңдалған өнім сақталады."
         )
         self.open_auth("login", default_role="buyer", context_message=context, preserve_deferred=True)
@@ -314,41 +421,16 @@ class MainWindow(QMainWindow):
         if draft is None:
             return
 
-        self.show_view("catalog")
         user = self.api.user
         if not user or user.get("role") != "buyer":
+            self.show_view("catalog")
             self.catalog_view.set_booking_feedback(
                 "Сіз сатушы аккаунтымен кірдіңіз. Брондау тек сатып алушы аккаунтына қолжетімді.",
                 "error",
             )
             return
 
-        if self._current_pending_attempt() is not None:
-            self.catalog_view.set_booking_feedback(
-                "Алдымен нәтижесі белгісіз алдыңғы броньды тексеріңіз.",
-                "error",
-            )
-            return
-
-        fresh = self.catalog_view.find_batch(draft.batch_id)
-        if fresh is None:
-            # Also check unfiltered catalog if a search query is active
-            all_batches = self.api.list_catalog(q="", limit=100, offset=0)
-            fresh = next((b for b in all_batches if str(b["batch_id"]) == draft.batch_id), None)
-
-        if fresh is None:
-            self.catalog_view.set_booking_feedback("Бұл партия қазір қолжетімсіз.", "error")
-            return
-
-        fresh_available = to_decimal(fresh["quantity_available"])
-        updated_draft = BookingDraft(
-            batch_id=draft.batch_id,
-            name=fresh["product"]["name"],
-            unit=fresh["product"]["unit"],
-            available=fresh_available,
-            quantity=draft.quantity,
-        )
-        self.open_booking(updated_draft)
+        self._add_draft_and_checkout(draft)
 
     def _retry_pending_booking(self) -> None:
         attempt = self._current_pending_attempt()
@@ -380,46 +462,8 @@ class MainWindow(QMainWindow):
             parent=self,
         )
         result = dialog.exec()
-
-        if result == BookingDialog.RESULT_AUTH_REQUESTED:
-            saved_qty = dialog.selected_quantity
-            self.deferred_booking = BookingDraft(
-                batch_id=draft.batch_id,
-                name=draft.name,
-                unit=draft.unit,
-                available=draft.available,
-                quantity=saved_qty,
-            )
-            qty_str = format_quantity(saved_qty)
-            unit_str = unit_label(draft.unit)
-            context = (
-                f"«{draft.name}» ({qty_str} {unit_str}) броньдауды жалғастыру үшін "
-                "сатып алушы ретінде кіріңіз немесе тіркеліңіз."
-            )
-            self.open_auth(
-                dialog.requested_auth_mode or "login",
-                default_role="buyer",
-                context_message=context,
-                preserve_deferred=True,
-            )
-            return
-
         if result == BookingDialog.DialogCode.Accepted and dialog.completed_order is not None:
-            order = dialog.completed_order
-            unit_str = unit_label(draft.unit)
-            receipt = (
-                f"«{draft.name}» брондалды. №{str(order['id'])[:8]} · "
-                f"{format_quantity(order['quantity'])} {unit_str} · "
-                f"{format_money(order['total_amount'], order.get('currency', 'KZT'))}."
-            )
-            self.catalog_view.set_booking_feedback(receipt, "success")
-            self.catalog_view.load_catalog(append=False)
-            self.catalog_view.load_ai_recommendations()
-            return
-
-        if dialog.rejected_error_message:
-            self.catalog_view.set_booking_feedback(dialog.rejected_error_message, "error")
-            self.catalog_view.load_catalog(append=False)
+            self._handle_order_confirmed(dialog.completed_order)
 
 
 def run_app(base_url: str | None = None) -> int:

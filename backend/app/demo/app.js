@@ -1,8 +1,12 @@
+import { createCheckout } from "./checkout.js";
 import { createSellerOrders } from "./seller-orders.js";
 
 const byId = (id) => document.getElementById(id);
 
 const catalogView = byId("catalog-view");
+const detailView = byId("detail-view");
+const checkoutView = byId("checkout-view");
+const confirmationView = byId("confirmation-view");
 const sellerView = byId("seller-view");
 const sessionLabel = byId("session-label");
 const signIn = byId("sign-in");
@@ -77,6 +81,7 @@ let storeRequest = 0;
 let publishedBatch = null;
 let bookingDraft = null;
 let deferredBooking = null;
+let returnToCheckoutAfterAuth = false;
 let pendingBooking = null;
 let bookingBusy = false;
 
@@ -163,6 +168,8 @@ function errorText(error) {
       return "Қалған өнім саны жеткіліксіз.";
     case "Order total is too large":
       return "Бронь сомасы тым үлкен. Өнім санын азайтыңыз.";
+    case "All cart items must belong to the same store":
+      return "Бір тапсырысқа тек бір дүкеннің өнімдері кіреді. Басқа дүкеннен тапсырыс беру үшін себетті тазартыңыз.";
     case "Idempotency key already used for a different reservation":
       return "Алдыңғы сұрау басқа броньға тиесілі. Қайта бастаңыз.";
     case "Invalid or expired token":
@@ -200,6 +207,7 @@ function renderSession() {
   sessionLabel.textContent = user ? `${roles[user.role] || user.email} · ${user.email}` : "";
   pendingBooking = user?.role === "buyer" ? readBookingAttempt(user.id) : null;
   bookingPending.hidden = !pendingBooking;
+  checkout?.syncAuthControls();
   loadAiRecommendations();
 }
 
@@ -268,7 +276,10 @@ function setAuthMode(mode, role) {
 
 function openAuth(mode, role = view === "seller" ? "seller" : "buyer", { context = "", preserveDeferred = false } = {}) {
   if (authBusy) return;
-  if (!preserveDeferred) deferredBooking = null;
+  if (!preserveDeferred) {
+    deferredBooking = null;
+    returnToCheckoutAfterAuth = false;
+  }
   authForm.reset();
   setAuthMode(mode, role);
   setFeedback(authContext, context);
@@ -279,7 +290,10 @@ function openAuth(mode, role = view === "seller" ? "seller" : "buyer", { context
 
 function closeAuth({ keepDeferred = false } = {}) {
   if (authBusy) return;
-  if (!keepDeferred) deferredBooking = null;
+  if (!keepDeferred) {
+    deferredBooking = null;
+    returnToCheckoutAfterAuth = false;
+  }
   authDialog.close();
   authForm.reset();
   setFeedback(authContext);
@@ -333,6 +347,7 @@ async function submitAuth(event) {
   const { email, password, role } = formValues(authForm);
   const credentials = { email: email.trim(), password };
   const resumeDraft = deferredBooking;
+  const goCheckoutAfter = returnToCheckoutAfterAuth;
   setFeedback(authFeedback);
   authBusy = true;
   buttonBusy(authSubmit, true);
@@ -360,10 +375,14 @@ async function submitAuth(event) {
   }
   if (signedIn) {
     closeAuth();
-    if (resumeDraft) {
+    if (goCheckoutAfter) {
+      navigate("checkout");
+    } else if (resumeDraft) {
       await resumeDeferredBooking(resumeDraft);
     } else if (view === "seller") {
       refreshStore();
+    } else if (view === "checkout") {
+      checkout.renderCheckout();
     } else if (view === "catalog") {
       loadCatalog();
     }
@@ -565,18 +584,34 @@ function productCard(batch) {
   };
   if (user?.role === "seller") {
     const note = createElement("p", "product-booking-hint", "Брондау тек сатып алушыларға қолжетімді.");
-    const switchBtn = createElement("button", "button button-outline button-small product-booking", "Сатып алушы ретінде кіру");
+    const actions = createElement("div", "card-actions");
+    const switchBtn = createElement("button", "button button-outline button-small", "Сатып алушы ретінде кіру");
     switchBtn.type = "button";
     switchBtn.setAttribute("aria-haspopup", "dialog");
     switchBtn.addEventListener("click", () => switchSellerToBuyerForBooking(draft));
-    copy.append(note, switchBtn);
+    const detailBtn = createElement("button", "button button-text button-small", "Толығырақ");
+    detailBtn.type = "button";
+    detailBtn.addEventListener("click", () => checkout.openDetail(batch));
+    actions.append(switchBtn, detailBtn);
+    copy.append(note, actions);
   } else {
-    const book = createElement("button", "button button-primary button-small product-booking", "Брондау");
-    book.type = "button";
-    book.setAttribute("aria-haspopup", "dialog");
-    book.setAttribute("aria-label", `${batch.product.name} тауарын брондау`);
-    book.addEventListener("click", () => openBooking(draft));
-    copy.append(book);
+    const actions = createElement("div", "card-actions");
+    const addCart = createElement("button", "button button-primary button-small", "Себетке қосу");
+    addCart.type = "button";
+    addCart.setAttribute("aria-label", `${batch.product.name} тауарын себетке қосу`);
+    addCart.addEventListener("click", () => {
+      const res = checkout.addBatch(batch);
+      setFeedback(
+        catalogBookingFeedback,
+        res.ok ? `${res.message} Рәсімдеу үшін «Себет (${checkout.count()})» түймесін басыңыз.` : res.message,
+        res.ok ? "success" : "error",
+      );
+    });
+    const detailBtn = createElement("button", "button button-outline button-small", "Толығырақ");
+    detailBtn.type = "button";
+    detailBtn.addEventListener("click", () => checkout.openDetail(batch));
+    actions.append(addCart, detailBtn);
+    copy.append(actions);
   }
   card.append(mark, copy);
   return card;
@@ -752,24 +787,39 @@ async function submitBatch(event) {
 }
 
 function showView(nextView) {
-  view = nextView === "seller" ? "seller" : "catalog";
-  sellerView.hidden = view !== "seller";
+  const valid = new Set(["catalog", "detail", "checkout", "confirmation", "seller"]);
+  view = valid.has(nextView) ? nextView : "catalog";
   catalogView.hidden = view !== "catalog";
+  detailView.hidden = view !== "detail";
+  checkoutView.hidden = view !== "checkout";
+  confirmationView.hidden = view !== "confirmation";
+  sellerView.hidden = view !== "seller";
   document.querySelectorAll("nav [data-view]").forEach((link) => {
-    if (link.dataset.view === view) link.setAttribute("aria-current", "page");
+    const active = link.dataset.view === view || (view === "detail" && link.dataset.view === "catalog");
+    if (active) link.setAttribute("aria-current", "page");
     else link.removeAttribute("aria-current");
   });
+  const navCart = byId("nav-cart");
+  if (navCart) navCart.dataset.active = String(view === "checkout" || view === "confirmation");
   if (view === "seller") {
     closeBooking();
     refreshStore();
-  } else {
+  } else if (view === "checkout") {
+    sellerOrders.reset();
+    checkout.renderCheckout();
+  } else if (view === "catalog") {
     sellerOrders.reset();
     loadCatalog();
   }
 }
 
 function navigate(nextView, jumpToOffers = false) {
-  const hash = nextView === "seller" ? "#seller" : jumpToOffers ? "#offers" : "#catalog";
+  const hash =
+    nextView === "seller" ? "#seller" :
+    nextView === "checkout" ? "#checkout" :
+    nextView === "confirmation" ? "#confirmation" :
+    nextView === "detail" ? "#detail" :
+    jumpToOffers ? "#offers" : "#catalog";
   if (location.hash !== hash) history.pushState(null, "", hash);
   showView(nextView);
   if (jumpToOffers) byId("offers").scrollIntoView();
@@ -777,6 +827,33 @@ function navigate(nextView, jumpToOffers = false) {
 }
 
 const sellerOrders = createSellerOrders({ api, setFeedback, money, quantity, date, createElement });
+const checkout = createCheckout({
+  api,
+  getUser: () => user,
+  getToken: () => token,
+  setFeedback,
+  errorText,
+  money,
+  quantity,
+  date,
+  units,
+  createElement,
+  onNavigate: navigate,
+  onRequireBuyerAuth: (mode, batch) => {
+    if (batch) {
+      checkout.addBatch(batch);
+    }
+    returnToCheckoutAfterAuth = true;
+    openAuth(mode, "buyer", {
+      context: "Себеттегі тапсырысты рәсімдеуді жалғастыру үшін сатып алушы ретінде кіріңіз немесе тіркеліңіз. Таңдалған өнімдер сақталады.",
+      preserveDeferred: true,
+    });
+  },
+  onOrderCreated: () => {
+    loadCatalog();
+    loadAiRecommendations();
+  },
+});
 
 document.addEventListener("click", (event) => {
   const trigger = event.target.closest("[data-view], [data-auth], [data-auth-close]");
@@ -865,7 +942,13 @@ publishedLink.addEventListener("click", (event) => {
   if (publishedBatch) field(catalogSearch, "q").value = publishedBatch.product.name;
   navigate("catalog", true);
 });
-window.addEventListener("popstate", () => showView(location.hash === "#seller" ? "seller" : "catalog"));
+function viewFromHash() {
+  if (location.hash === "#seller") return "seller";
+  if (location.hash === "#checkout") return "checkout";
+  return "catalog";
+}
+
+window.addEventListener("popstate", () => showView(viewFromHash()));
 
 async function start() {
   if (token) {
@@ -876,7 +959,7 @@ async function start() {
     }
   }
   renderSession();
-  showView(location.hash === "#seller" ? "seller" : "catalog");
+  showView(viewFromHash());
 }
 
 start();

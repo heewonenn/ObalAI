@@ -262,3 +262,76 @@ def test_buyer_ai_recommendations_insufficient_then_ok(client: TestClient, marke
     for item in r3["items"]:
         assert 0.0 <= item["score"] <= 1.0
         assert isinstance(item["explanation"], str) and len(item["explanation"]) > 5
+
+
+def test_cart_checkout_multi_item_and_delivery(client: TestClient, marketplace_fixture):
+    batches = marketplace_fixture["batches"]
+    buyer_headers = marketplace_fixture["buyer_headers"]
+
+    # Delivery without address must fail with 422
+    bad_delivery = client.post(
+        "/api/orders",
+        headers={**buyer_headers, "Idempotency-Key": str(uuid.uuid4())},
+        json={
+            "items": [{"batch_id": batches[0]["batch_id"], "quantity": "1"}],
+            "fulfillment_method": "delivery",
+            "delivery_address": "   ",
+        },
+    )
+    assert bad_delivery.status_code == 422
+
+    # Multi-item cart order with pickup returns pickup_code, store address, and savings
+    idem = str(uuid.uuid4())
+    res = client.post(
+        "/api/orders",
+        headers={**buyer_headers, "Idempotency-Key": idem},
+        json={
+            "items": [
+                {"batch_id": batches[0]["batch_id"], "quantity": "1"},
+                {"batch_id": batches[1]["batch_id"], "quantity": "2"},
+            ],
+            "fulfillment_method": "pickup",
+            "payment_method": "pay_at_pickup",
+        },
+    )
+    assert res.status_code == 201
+    order = res.json()
+    assert order["pickup_code"].startswith("OB-")
+    assert order["fulfillment_method"] == "pickup"
+    assert order["delivery_address"] is None
+    assert order["store"]["address"] == "Abay 1"
+    assert len(order["items"]) == 2
+    assert Decimal(order["total_amount"]) == Decimal("2000.00")  # 600 + 2*700
+    assert Decimal(order["original_total"]) == Decimal("3400.00")  # 1000 + 2*1200
+    assert Decimal(order["savings_amount"]) == Decimal("1400.00")
+
+    # Idempotent retry returns 200 with identical order
+    retry = client.post(
+        "/api/orders",
+        headers={**buyer_headers, "Idempotency-Key": idem},
+        json={
+            "items": [
+                {"batch_id": batches[0]["batch_id"], "quantity": "1"},
+                {"batch_id": batches[1]["batch_id"], "quantity": "2"},
+            ],
+            "fulfillment_method": "pickup",
+            "payment_method": "pay_at_pickup",
+        },
+    )
+    assert retry.status_code == 200
+    assert retry.json()["id"] == order["id"]
+
+    # Delivery with valid address succeeds
+    deliv = client.post(
+        "/api/orders",
+        headers={**buyer_headers, "Idempotency-Key": str(uuid.uuid4())},
+        json={
+            "items": [{"batch_id": batches[2]["batch_id"], "quantity": "1"}],
+            "fulfillment_method": "delivery",
+            "delivery_address": "Алматы, Абай 15, кв 24",
+            "payment_method": "pay_at_pickup",
+        },
+    )
+    assert deliv.status_code == 201
+    assert deliv.json()["fulfillment_method"] == "delivery"
+    assert deliv.json()["delivery_address"] == "Алматы, Абай 15, кв 24"
