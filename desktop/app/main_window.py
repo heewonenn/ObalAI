@@ -20,7 +20,7 @@ from .dialogs import AuthDialog, BookingAttempt, BookingDraft, BookingDialog
 from .formatting import format_money, format_quantity, role_label, to_decimal, unit_label
 from .seller_view import SellerView
 from .styles import APP_STYLESHEET
-from .widgets import repolish
+from .widgets import BrandLogo, load_app_icon, repolish
 
 
 class MainWindow(QMainWindow):
@@ -36,24 +36,29 @@ class MainWindow(QMainWindow):
         self.pending_bookings: dict[str, BookingAttempt] = {}
 
         self.setWindowTitle("ObalAi — Азық-түлік каталогы")
-        self.resize(1120, 780)
-        self.setMinimumSize(520, 600)
+        self.setWindowIcon(load_app_icon())
+        self.resize(1200, 820)
+        self.setMinimumSize(640, 620)
 
         central = QWidget()
         layout = QVBoxLayout(central)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
-        # Header
+        # Header matching the site's 3-column layout
         header = QFrame()
         header.setObjectName("headerBar")
-        header_layout = QHBoxLayout(header)
-        header_layout.setContentsMargins(24, 12, 24, 12)
-        header_layout.setSpacing(12)
+        header_outer = QHBoxLayout(header)
+        header_outer.setContentsMargins(32, 0, 32, 0)
 
-        brand = QLabel("ObalAi")
-        brand.setObjectName("brandTitle")
-        header_layout.addWidget(brand)
+        header_inner = QWidget()
+        header_inner.setMaximumWidth(1160)
+        header_layout = QHBoxLayout(header_inner)
+        header_layout.setContentsMargins(0, 8, 0, 8)
+        header_layout.setSpacing(24)
+
+        header_layout.addWidget(BrandLogo(icon_size=36, font_size=23))
+        header_layout.addStretch(1)
 
         self.nav_catalog_btn = QPushButton("Каталог")
         self.nav_catalog_btn.setProperty("variant", "nav")
@@ -72,7 +77,7 @@ class MainWindow(QMainWindow):
         self.session_label.setVisible(False)
         header_layout.addWidget(self.session_label)
 
-        self.sign_in_btn = QPushButton("Кіру")
+        self.sign_in_btn = QPushButton("Кіру  ↗")
         self.sign_in_btn.clicked.connect(lambda: self.open_auth("login"))
         header_layout.addWidget(self.sign_in_btn)
 
@@ -80,6 +85,10 @@ class MainWindow(QMainWindow):
         self.sign_out_btn.setVisible(False)
         self.sign_out_btn.clicked.connect(self.logout)
         header_layout.addWidget(self.sign_out_btn)
+
+        header_outer.addStretch(1)
+        header_outer.addWidget(header_inner, stretch=100)
+        header_outer.addStretch(1)
 
         layout.addWidget(header)
 
@@ -96,6 +105,7 @@ class MainWindow(QMainWindow):
             self.api,
             on_request_auth=lambda mode, role: self.open_auth(mode, default_role=role),
             on_view_published=self._view_published_product,
+            on_back_to_catalog=lambda: self.show_view("catalog"),
         )
         self.stack.addWidget(self.catalog_view)
         self.stack.addWidget(self.seller_view)

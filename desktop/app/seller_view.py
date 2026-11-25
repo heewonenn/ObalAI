@@ -30,7 +30,7 @@ from .formatting import (
     format_quantity,
     order_status_label,
 )
-from .widgets import FeedbackBanner, repolish
+from .widgets import FeedbackBanner, FormSymbol, SiteFooter, repolish
 
 
 ORDERS_PAGE_SIZE = 50
@@ -45,12 +45,14 @@ class SellerView(QWidget):
         *,
         on_request_auth: Callable[[str, str], None],
         on_view_published: Callable[[str], None],
+        on_back_to_catalog: Callable[[], None] | None = None,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         self.api = api
         self.on_request_auth = on_request_auth
         self.on_view_published = on_view_published
+        self.on_back_to_catalog = on_back_to_catalog
 
         self.store: dict[str, Any] | None = None
         self.published_product_name: str | None = None
@@ -64,10 +66,21 @@ class SellerView(QWidget):
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
+        page = QWidget()
+        page_wrap = QHBoxLayout(page)
+        page_wrap.setContentsMargins(32, 24, 32, 24)
+
         content = QWidget()
+        content.setMaximumWidth(1160)
         self.root = QVBoxLayout(content)
-        self.root.setContentsMargins(24, 20, 24, 28)
-        self.root.setSpacing(16)
+        self.root.setContentsMargins(0, 0, 0, 0)
+        self.root.setSpacing(18)
+
+        if self.on_back_to_catalog is not None:
+            back_btn = QPushButton("← Каталогқа оралу")
+            back_btn.setProperty("variant", "link")
+            back_btn.clicked.connect(self.on_back_to_catalog)
+            self.root.addWidget(back_btn, alignment=Qt.AlignmentFlag.AlignLeft)
 
         heading = QLabel("Сатушы кабинеті")
         heading.setObjectName("pageTitle")
@@ -80,9 +93,11 @@ class SellerView(QWidget):
         # Gate panel for guests or buyers
         self.gate_card = QFrame()
         self.gate_card.setObjectName("surfaceCard")
+        self.gate_card.setMaximumWidth(700)
         gate_layout = QVBoxLayout(self.gate_card)
-        gate_layout.setContentsMargins(22, 20, 22, 20)
-        gate_layout.setSpacing(10)
+        gate_layout.setContentsMargins(26, 24, 26, 24)
+        gate_layout.setSpacing(12)
+        gate_layout.addWidget(FormSymbol("↗"))
         gate_title = QLabel("Сатушы аккаунты")
         gate_title.setObjectName("sectionTitle")
         self.gate_message = QLabel("Дүкен ашып, өнім жариялау үшін сатушы аккаунтына кіріңіз.")
@@ -130,8 +145,9 @@ class SellerView(QWidget):
         self.store_details = QFrame()
         self.store_details.setObjectName("storeSummary")
         details_layout = QVBoxLayout(self.store_details)
-        details_layout.setContentsMargins(14, 14, 14, 14)
-        details_layout.setSpacing(4)
+        details_layout.setContentsMargins(16, 16, 16, 16)
+        details_layout.setSpacing(6)
+        details_layout.addWidget(FormSymbol("⌂"))
         self.store_name_label = QLabel()
         self.store_name_label.setObjectName("productTitle")
         self.store_name_label.setWordWrap(True)
@@ -318,8 +334,12 @@ class SellerView(QWidget):
         ws_layout.addWidget(orders_card)
         self.root.addWidget(self.workspace)
         self.root.addStretch(1)
+        self.root.addWidget(SiteFooter())
 
-        scroll.setWidget(content)
+        page_wrap.addStretch(1)
+        page_wrap.addWidget(content, stretch=100)
+        page_wrap.addStretch(1)
+        scroll.setWidget(page)
         outer.addWidget(scroll)
 
     def _reset_default_expiry(self) -> None:

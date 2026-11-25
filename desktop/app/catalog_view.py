@@ -26,14 +26,14 @@ from .formatting import (
     to_decimal,
     unit_label,
 )
-from .widgets import FeedbackBanner
+from .widgets import FeedbackBanner, HeroImageWidget, SiteFooter
 
 
 PAGE_SIZE = 24
 
 
 class ProductCard(QFrame):
-    """Single offer card in the public catalog."""
+    """Single offer card matching the ObalAi editorial design."""
 
     def __init__(
         self,
@@ -68,7 +68,7 @@ class ProductCard(QFrame):
         header = QFrame()
         header.setObjectName("productCardHeader")
         header_layout = QHBoxLayout(header)
-        header_layout.setContentsMargins(14, 9, 14, 9)
+        header_layout.setContentsMargins(16, 10, 16, 10)
         unit_badge = QLabel(unit_text)
         unit_badge.setObjectName("unitBadge")
         header_layout.addWidget(unit_badge)
@@ -81,8 +81,8 @@ class ProductCard(QFrame):
 
         body = QWidget()
         body_layout = QVBoxLayout(body)
-        body_layout.setContentsMargins(16, 14, 16, 16)
-        body_layout.setSpacing(6)
+        body_layout.setContentsMargins(18, 16, 18, 18)
+        body_layout.setSpacing(7)
 
         title = QLabel(product["name"])
         title.setObjectName("productTitle")
@@ -100,6 +100,7 @@ class ProductCard(QFrame):
         body_layout.addWidget(meta)
 
         price_row = QHBoxLayout()
+        price_row.setContentsMargins(0, 6, 0, 2)
         price_row.setSpacing(8)
         price_label = QLabel(format_money(batch["discount_price"], currency))
         price_label.setObjectName("priceLabel")
@@ -140,7 +141,7 @@ class ProductCard(QFrame):
 
 
 class CatalogView(QWidget):
-    """Public catalog screen with search, pagination, and booking entry points."""
+    """Editorial hero + public catalog screen with search, cards, and footer."""
 
     def __init__(
         self,
@@ -164,15 +165,95 @@ class CatalogView(QWidget):
         self.current_query = ""
         self._last_columns = 3
 
-        root = QVBoxLayout(self)
-        root.setContentsMargins(24, 20, 24, 20)
-        root.setSpacing(14)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+
+        self.scroll = QScrollArea()
+        self.scroll.setWidgetResizable(True)
+        outer.addWidget(self.scroll)
+
+        page = QWidget()
+        page_wrap = QHBoxLayout(page)
+        page_wrap.setContentsMargins(32, 24, 32, 24)
+
+        inner = QWidget()
+        inner.setMaximumWidth(1160)
+        root = QVBoxLayout(inner)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(26)
+
+        # --- HERO BANNER (matching ObalAi site design) ---
+        hero = QFrame()
+        hero.setObjectName("heroCard")
+        hero_layout = QHBoxLayout(hero)
+        hero_layout.setContentsMargins(0, 0, 0, 0)
+        hero_layout.setSpacing(0)
+
+        hero_copy = QWidget()
+        copy_layout = QVBoxLayout(hero_copy)
+        copy_layout.setContentsMargins(46, 44, 38, 44)
+        copy_layout.setSpacing(16)
+
+        eyebrow_row = QHBoxLayout()
+        eyebrow_row.setSpacing(8)
+        dot = QLabel()
+        dot.setObjectName("eyebrowDot")
+        dot.setFixedSize(8, 8)
+        eyebrow = QLabel("ЖЕРГІЛІКТІ АЗЫҚ-ТҮЛІК")
+        eyebrow.setObjectName("eyebrowLabel")
+        eyebrow_row.addWidget(dot)
+        eyebrow_row.addWidget(eyebrow)
+        eyebrow_row.addStretch(1)
+        copy_layout.addLayout(eyebrow_row)
+
+        hero_title = QLabel(
+            'Жақсы тағамға<br><span style="font-style:italic;color:#244a31;">екінші мүмкіндік</span>'
+        )
+        hero_title.setObjectName("heroTitle")
+        hero_title.setTextFormat(Qt.TextFormat.RichText)
+        hero_title.setWordWrap(True)
+        copy_layout.addWidget(hero_title)
+
+        hero_desc = QLabel(
+            "Жергілікті дүкендер мен дәмханалардың жеңілдікпен ұсынған өнімдерін табыңыз."
+        )
+        hero_desc.setObjectName("heroDescription")
+        hero_desc.setWordWrap(True)
+        copy_layout.addWidget(hero_desc)
+
+        hero_actions = QHBoxLayout()
+        hero_actions.setSpacing(12)
+        browse_btn = QPushButton("Каталогты қарау  ↓")
+        browse_btn.setProperty("variant", "primary")
+        browse_btn.clicked.connect(self._scroll_to_offers)
+
+        add_batch_btn = QPushButton("Партия қосу  ↗")
+        add_batch_btn.setProperty("variant", "link")
+        add_batch_btn.clicked.connect(self.on_open_seller)
+
+        hero_actions.addWidget(browse_btn)
+        hero_actions.addWidget(add_batch_btn)
+        hero_actions.addStretch(1)
+        copy_layout.addSpacing(4)
+        copy_layout.addLayout(hero_actions)
+        copy_layout.addStretch(1)
+
+        self.hero_image = HeroImageWidget()
+        hero_layout.addWidget(hero_copy, stretch=10)
+        hero_layout.addWidget(self.hero_image, stretch=11)
+        root.addWidget(hero)
+
+        # --- CATALOG SECTION ---
+        self.offers_section = QWidget()
+        offers_layout = QVBoxLayout(self.offers_section)
+        offers_layout.setContentsMargins(0, 12, 0, 8)
+        offers_layout.setSpacing(16)
 
         top_row = QHBoxLayout()
-        top_row.setSpacing(14)
+        top_row.setSpacing(12)
 
         title_col = QVBoxLayout()
-        title_col.setSpacing(2)
+        title_col.setSpacing(3)
         title = QLabel("Қолжетімді өнімдер")
         title.setObjectName("pageTitle")
         self.count_label = QLabel()
@@ -184,13 +265,17 @@ class CatalogView(QWidget):
         top_row.addStretch(1)
 
         self.search_input = QLineEdit()
+        self.search_input.setObjectName("searchInput")
         self.search_input.setPlaceholderText("Өнімді іздеу")
         self.search_input.setMaxLength(180)
-        self.search_input.setMinimumWidth(240)
+        self.search_input.setMinimumWidth(250)
         self.search_input.returnPressed.connect(lambda: self.load_catalog(append=False))
         top_row.addWidget(self.search_input)
 
-        self.clear_button = QPushButton("Тазалау")
+        self.clear_button = QPushButton("×")
+        self.clear_button.setObjectName("iconPillButton")
+        self.clear_button.setFixedSize(40, 40)
+        self.clear_button.setToolTip("Іздеуді тазалау")
         self.clear_button.setVisible(False)
         self.clear_button.clicked.connect(self._clear_search)
         top_row.addWidget(self.clear_button)
@@ -204,15 +289,15 @@ class CatalogView(QWidget):
         self.refresh_button.clicked.connect(lambda: self.load_catalog(append=False))
         top_row.addWidget(self.refresh_button)
 
-        root.addLayout(top_row)
+        offers_layout.addLayout(top_row)
 
         self.booking_feedback = FeedbackBanner()
-        root.addWidget(self.booking_feedback)
+        offers_layout.addWidget(self.booking_feedback)
 
         self.pending_bar = QFrame()
         self.pending_bar.setObjectName("feedbackBanner")
         pending_layout = QHBoxLayout(self.pending_bar)
-        pending_layout.setContentsMargins(12, 8, 12, 8)
+        pending_layout.setContentsMargins(14, 10, 14, 10)
         pending_text = QLabel("Алдыңғы броньдың нәтижесі әзірге белгісіз.")
         pending_text.setObjectName("feedbackLabel")
         self.pending_retry_button = QPushButton("Броньды тексеру")
@@ -221,31 +306,52 @@ class CatalogView(QWidget):
         pending_layout.addStretch(1)
         pending_layout.addWidget(self.pending_retry_button)
         self.pending_bar.setVisible(False)
-        root.addWidget(self.pending_bar)
+        offers_layout.addWidget(self.pending_bar)
 
         self.state_banner = FeedbackBanner()
-        root.addWidget(self.state_banner)
+        offers_layout.addWidget(self.state_banner)
 
-        self.scroll = QScrollArea()
-        self.scroll.setWidgetResizable(True)
-        self.scroll_content = QWidget()
-        scroll_layout = QVBoxLayout(self.scroll_content)
-        scroll_layout.setContentsMargins(0, 0, 4, 0)
-        scroll_layout.setSpacing(16)
+        # Styled empty-state dashed card matching the site
+        self.empty_card = QFrame()
+        self.empty_card.setObjectName("emptyStateCard")
+        empty_layout = QVBoxLayout(self.empty_card)
+        empty_layout.setContentsMargins(24, 34, 24, 34)
+        empty_layout.setSpacing(10)
+        empty_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.empty_title = QLabel("Қазір қолжетімді партиялар жоқ.")
+        self.empty_title.setObjectName("mutedText")
+        self.empty_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.empty_action = QPushButton("Партия қосу  ↗")
+        self.empty_action.setProperty("variant", "link")
+        self.empty_action.clicked.connect(self.on_open_seller)
+        empty_layout.addWidget(self.empty_title)
+        empty_layout.addWidget(self.empty_action, alignment=Qt.AlignmentFlag.AlignCenter)
+        self.empty_card.setVisible(False)
+        offers_layout.addWidget(self.empty_card)
 
         self.grid = QGridLayout()
-        self.grid.setSpacing(16)
+        self.grid.setSpacing(18)
         self.grid.setAlignment(Qt.AlignmentFlag.AlignTop)
-        scroll_layout.addLayout(self.grid)
+        offers_layout.addLayout(self.grid)
 
         self.more_button = QPushButton("Тағы көрсету")
         self.more_button.setVisible(False)
         self.more_button.clicked.connect(lambda: self.load_catalog(append=True))
-        scroll_layout.addWidget(self.more_button, alignment=Qt.AlignmentFlag.AlignCenter)
-        scroll_layout.addStretch(1)
+        offers_layout.addWidget(self.more_button, alignment=Qt.AlignmentFlag.AlignCenter)
 
-        self.scroll.setWidget(self.scroll_content)
-        root.addWidget(self.scroll, stretch=1)
+        root.addWidget(self.offers_section)
+        root.addStretch(1)
+        root.addWidget(SiteFooter())
+
+        page_wrap.addStretch(1)
+        page_wrap.addWidget(inner, stretch=100)
+        page_wrap.addStretch(1)
+        self.scroll.setWidget(page)
+
+    def _scroll_to_offers(self) -> None:
+        self.scroll.ensureWidgetVisible(self.offers_section, 0, 24)
+        bar = self.scroll.verticalScrollBar()
+        bar.setValue(max(0, self.offers_section.y() - 16))
 
     def set_search_query(self, text: str) -> None:
         self.search_input.setText(text)
@@ -263,9 +369,9 @@ class CatalogView(QWidget):
 
     def _column_count(self) -> int:
         width = self.width()
-        if width < 640:
+        if width < 680:
             return 1
-        if width < 980:
+        if width < 1020:
             return 2
         return 3
 
@@ -317,6 +423,7 @@ class CatalogView(QWidget):
             self.batches = []
             self._clear_grid()
             self.count_label.setVisible(False)
+            self.empty_card.setVisible(False)
         self.clear_button.setVisible(bool(self.current_query))
         self.more_button.setVisible(False)
         self.state_banner.set_message("Каталог жүктелуде…", "")
@@ -336,19 +443,21 @@ class CatalogView(QWidget):
         self.batches.extend(page)
         self.offset += len(page)
         self._render_cards()
+        self.state_banner.clear()
 
         if self.batches:
             self.count_label.setText(f"{len(self.batches)} ұсыныс")
             self.count_label.setVisible(True)
-            self.state_banner.clear()
+            self.empty_card.setVisible(False)
         else:
             self.count_label.setVisible(False)
-            empty_text = (
+            self.empty_title.setText(
                 "Іздеу нәтижесі табылмады."
                 if self.current_query
                 else "Қазір қолжетімді партиялар жоқ."
             )
-            self.state_banner.set_message(empty_text, "")
+            self.empty_action.setVisible(not self.current_query)
+            self.empty_card.setVisible(True)
 
         self.more_button.setVisible(len(page) == PAGE_SIZE)
         return self.batches
