@@ -355,6 +355,83 @@ QPushButton#iconPillButton {
     font-weight: 700;
 }
 
+QFrame#filterBar {
+    background-color: #fdfcf8;
+    border: 1px solid #d9dacb;
+    border-radius: 16px;
+}
+
+QFrame#compareBar {
+    background-color: #e8edda;
+    border: 1px solid #c3d0b0;
+    border-radius: 14px;
+}
+
+QPushButton#favButton {
+    border-radius: 14px;
+    padding: 2px 8px;
+    min-height: 24px;
+    border: 1px solid #c3cdb9;
+    background-color: #fdfcf8;
+    color: #565f52;
+    font-size: 14px;
+}
+
+QPushButton#favButton[saved="true"] {
+    background-color: #244a31;
+    border-color: #244a31;
+    color: #ddeb9b;
+}
+
+QPushButton#cardSecondaryBtn {
+    border-radius: 14px;
+    padding: 6px 12px;
+    min-height: 18px;
+    font-size: 12px;
+    font-weight: 600;
+    border: 1px solid #c6cdb9;
+    background-color: #f7f5ee;
+    color: #244a31;
+}
+
+QPushButton#cardSecondaryBtn:hover {
+    background-color: #e8edda;
+    border-color: #244a31;
+}
+
+QPushButton#cardSecondaryBtn[selected="true"] {
+    background-color: #ddeb9b;
+    border-color: #244a31;
+    color: #183a25;
+}
+
+QPushButton#favoritesFilterBtn[checked="true"] {
+    background-color: #244a31;
+    border-color: #244a31;
+    color: #ddeb9b;
+}
+
+QLabel#wsmRankBadge {
+    background-color: #e8edda;
+    color: #244a31;
+    border-radius: 11px;
+    padding: 3px 10px;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+QLabel#wsmRankBadge[top="true"] {
+    background-color: #244a31;
+    color: #ddeb9b;
+}
+
+QLabel#wsmScoreLabel {
+    font-family: "Georgia", "Times New Roman", serif;
+    font-size: 24px;
+    color: #244a31;
+    font-weight: 700;
+}
+
 /* Scrollbar polish */
 QScrollBar:vertical {
     background: transparent;

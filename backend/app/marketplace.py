@@ -5,7 +5,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator, model_validator
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, contains_eager
 
@@ -150,6 +150,14 @@ def publish_batch(
 def list_catalog(
     db: Session = Depends(get_db),
     q: str | None = Query(default=None, max_length=180, description="Search by product name"),
+    city: str | None = Query(default=None, max_length=120, description="Filter by store city"),
+    unit: Literal["piece", "kg", "portion"] | None = Query(default=None, description="Filter by unit"),
+    max_price: Decimal | None = Query(default=None, ge=0, description="Maximum discount price in KZT"),
+    min_discount: int | None = Query(default=None, ge=0, le=100, description="Minimum discount percentage"),
+    sort: Literal["expires_asc", "price_asc", "price_desc", "discount_desc"] = Query(
+        default="expires_asc",
+        description="Sort order",
+    ),
     limit: int = Query(default=50, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
 ):
@@ -169,5 +177,56 @@ def list_catalog(
     search = q.strip() if q else ""
     if search:
         query = query.where(Product.name.icontains(search, autoescape=True))
-    query = query.order_by(InventoryBatch.expires_at, InventoryBatch.id).offset(offset).limit(limit)
+    city_filter = city.strip() if city else ""
+    if city_filter:
+        query = query.where(Store.city.icontains(city_filter, autoescape=True))
+    if unit is not None:
+        query = query.where(Product.unit == unit)
+    if max_price is not None:
+        query = query.where(InventoryBatch.discount_price <= max_price)
+    if min_discount is not None and min_discount > 0:
+        query = query.where(
+            InventoryBatch.regular_price > 0,
+            (InventoryBatch.regular_price - InventoryBatch.discount_price) * 100
+            >= min_discount * InventoryBatch.regular_price,
+        )
+
+    if sort == "price_asc":
+        order_by = (InventoryBatch.discount_price.asc(), InventoryBatch.expires_at.asc(), InventoryBatch.id.asc())
+    elif sort == "price_desc":
+        order_by = (InventoryBatch.discount_price.desc(), InventoryBatch.expires_at.asc(), InventoryBatch.id.asc())
+    elif sort == "discount_desc":
+        discount_ratio = case(
+            (
+                InventoryBatch.regular_price > 0,
+                (InventoryBatch.regular_price - InventoryBatch.discount_price) / InventoryBatch.regular_price,
+            ),
+            else_=0,
+        )
+        order_by = (discount_ratio.desc(), InventoryBatch.expires_at.asc(), InventoryBatch.id.asc())
+    else:
+        order_by = (InventoryBatch.expires_at.asc(), InventoryBatch.id.asc())
+
+    query = query.order_by(*order_by).offset(offset).limit(limit)
     return db.scalars(query).all()
+
+
+@router.get("/catalog/{batch_id}", response_model=BatchResponse, tags=["catalog"])
+def get_catalog_batch(batch_id: UUID, db: Session = Depends(get_db)):
+    batch = db.scalar(
+        select(InventoryBatch)
+        .join(InventoryBatch.product)
+        .join(InventoryBatch.store)
+        .options(contains_eager(InventoryBatch.product), contains_eager(InventoryBatch.store))
+        .where(
+            InventoryBatch.id == batch_id,
+            InventoryBatch.status == "active",
+            InventoryBatch.quantity_available > 0,
+            InventoryBatch.expires_at > func.now(),
+            Product.is_active.is_(True),
+            Store.is_active.is_(True),
+        )
+    )
+    if batch is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Batch not found")
+    return batch

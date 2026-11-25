@@ -5,6 +5,7 @@ from typing import Any
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
+    QComboBox,
     QFrame,
     QGridLayout,
     QHBoxLayout,
@@ -12,6 +13,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QPushButton,
     QScrollArea,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
@@ -19,6 +21,7 @@ from PySide6.QtWidgets import (
 from .api_client import ApiError, ObalApiClient, translate_api_error
 from .dialogs import BookingAttempt, BookingDraft
 from .formatting import (
+    UNIT_LABELS,
     discount_percent,
     format_datetime,
     format_money,
@@ -26,27 +29,42 @@ from .formatting import (
     to_decimal,
     unit_label,
 )
-from .widgets import FeedbackBanner, HeroImageWidget, SiteFooter
+from .widgets import FeedbackBanner, HeroImageWidget, SiteFooter, repolish
 
 
 PAGE_SIZE = 24
 
+SORT_OPTIONS: list[tuple[str, str]] = [
+    ("expires_asc", "Мерзімі жақын"),
+    ("price_asc", "Ең арзан"),
+    ("price_desc", "Ең қымбат"),
+    ("discount_desc", "Жеңілдігі жоғары"),
+]
+
 
 class ProductCard(QFrame):
-    """Single offer card matching the ObalAi editorial design."""
+    """Single offer card with booking, favorite toggle, detail, and WSM compare actions."""
 
     def __init__(
         self,
         batch: dict[str, Any],
         *,
         user: dict[str, Any] | None,
+        is_favorite: bool,
+        in_compare: bool,
         on_book: Callable[[BookingDraft], None],
         on_switch_to_buyer: Callable[[BookingDraft], None],
+        on_open_detail: Callable[[dict[str, Any]], None],
+        on_toggle_favorite: Callable[[str], None],
+        on_toggle_compare: Callable[[str], None],
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         self.setObjectName("productCard")
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+        self.setMinimumHeight(310)
         self.batch = batch
+        batch_id = str(batch["batch_id"])
 
         product = batch["product"]
         store = batch["store"]
@@ -55,7 +73,7 @@ class ProductCard(QFrame):
         currency = batch.get("currency", "KZT")
 
         draft = BookingDraft(
-            batch_id=str(batch["batch_id"]),
+            batch_id=batch_id,
             name=product["name"],
             unit=product["unit"],
             available=to_decimal(batch["quantity_available"]),
@@ -68,7 +86,8 @@ class ProductCard(QFrame):
         header = QFrame()
         header.setObjectName("productCardHeader")
         header_layout = QHBoxLayout(header)
-        header_layout.setContentsMargins(16, 10, 16, 10)
+        header_layout.setContentsMargins(16, 9, 12, 9)
+        header_layout.setSpacing(8)
         unit_badge = QLabel(unit_text)
         unit_badge.setObjectName("unitBadge")
         header_layout.addWidget(unit_badge)
@@ -77,6 +96,19 @@ class ProductCard(QFrame):
             disc_badge = QLabel(f"−{pct}%")
             disc_badge.setObjectName("discountBadge")
             header_layout.addWidget(disc_badge)
+
+        role = user.get("role") if user else None
+        self.fav_button: QPushButton | None = None
+        if role == "buyer":
+            fav_btn = QPushButton("★" if is_favorite else "☆")
+            fav_btn.setObjectName("favButton")
+            fav_btn.setProperty("saved", "true" if is_favorite else "false")
+            fav_btn.setToolTip("Таңдаулылардан алу" if is_favorite else "Таңдаулыларға қосу")
+            repolish(fav_btn)
+            fav_btn.clicked.connect(lambda _=False, bid=batch_id: on_toggle_favorite(bid))
+            header_layout.addWidget(fav_btn)
+            self.fav_button = fav_btn
+
         outer.addWidget(header)
 
         body = QWidget()
@@ -121,7 +153,6 @@ class ProductCard(QFrame):
 
         body_layout.addStretch(1)
 
-        role = user.get("role") if user else None
         if role == "seller":
             hint = QLabel("Брондау тек сатып алушыларға қолжетімді.")
             hint.setObjectName("sellerBookingHint")
@@ -137,11 +168,27 @@ class ProductCard(QFrame):
             self.action_button.clicked.connect(lambda: on_book(draft))
             body_layout.addWidget(self.action_button)
 
+        secondary_row = QHBoxLayout()
+        secondary_row.setSpacing(8)
+        self.detail_button = QPushButton("Толығырақ")
+        self.detail_button.setObjectName("cardSecondaryBtn")
+        self.detail_button.clicked.connect(lambda _=False, b=batch: on_open_detail(b))
+
+        self.compare_button = QPushButton("✓ Салыстыруда" if in_compare else "Салыстыру")
+        self.compare_button.setObjectName("cardSecondaryBtn")
+        self.compare_button.setProperty("selected", "true" if in_compare else "false")
+        repolish(self.compare_button)
+        self.compare_button.clicked.connect(lambda _=False, bid=batch_id: on_toggle_compare(bid))
+
+        secondary_row.addWidget(self.detail_button, stretch=1)
+        secondary_row.addWidget(self.compare_button, stretch=1)
+        body_layout.addLayout(secondary_row)
+
         outer.addWidget(body)
 
 
 class CatalogView(QWidget):
-    """Editorial hero + public catalog screen with search, cards, and footer."""
+    """Editorial hero + catalog with filters, sorting, favorites, and WSM comparison."""
 
     def __init__(
         self,
@@ -151,6 +198,9 @@ class CatalogView(QWidget):
         on_switch_to_buyer: Callable[[BookingDraft], None],
         on_retry_pending: Callable[[], None],
         on_open_seller: Callable[[], None],
+        on_open_detail: Callable[[dict[str, Any]], None],
+        on_open_compare: Callable[[list[str]], None],
+        on_toggle_favorite: Callable[[str], bool],
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
@@ -159,8 +209,14 @@ class CatalogView(QWidget):
         self.on_switch_to_buyer = on_switch_to_buyer
         self.on_retry_pending = on_retry_pending
         self.on_open_seller = on_open_seller
+        self.on_open_detail = on_open_detail
+        self.on_open_compare = on_open_compare
+        self.on_toggle_favorite = on_toggle_favorite
 
         self.batches: list[dict[str, Any]] = []
+        self.favorite_ids: set[str] = set()
+        self.compare_ids: list[str] = []
+        self.favorites_only = False
         self.offset = 0
         self.current_query = ""
         self._last_columns = 3
@@ -180,11 +236,13 @@ class CatalogView(QWidget):
         inner.setMaximumWidth(1160)
         root = QVBoxLayout(inner)
         root.setContentsMargins(0, 0, 0, 0)
-        root.setSpacing(26)
+        root.setSpacing(24)
 
-        # --- HERO BANNER (matching ObalAi site design) ---
+        # --- HERO BANNER ---
         hero = QFrame()
         hero.setObjectName("heroCard")
+        hero.setMinimumHeight(350)
+        hero.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
         hero_layout = QHBoxLayout(hero)
         hero_layout.setContentsMargins(0, 0, 0, 0)
         hero_layout.setSpacing(0)
@@ -212,6 +270,7 @@ class CatalogView(QWidget):
         hero_title.setObjectName("heroTitle")
         hero_title.setTextFormat(Qt.TextFormat.RichText)
         hero_title.setWordWrap(True)
+        hero_title.setMinimumHeight(108)
         copy_layout.addWidget(hero_title)
 
         hero_desc = QLabel(
@@ -246,8 +305,8 @@ class CatalogView(QWidget):
         # --- CATALOG SECTION ---
         self.offers_section = QWidget()
         offers_layout = QVBoxLayout(self.offers_section)
-        offers_layout.setContentsMargins(0, 12, 0, 8)
-        offers_layout.setSpacing(16)
+        offers_layout.setContentsMargins(0, 10, 0, 8)
+        offers_layout.setSpacing(14)
 
         top_row = QHBoxLayout()
         top_row.setSpacing(12)
@@ -268,7 +327,7 @@ class CatalogView(QWidget):
         self.search_input.setObjectName("searchInput")
         self.search_input.setPlaceholderText("Өнімді іздеу")
         self.search_input.setMaxLength(180)
-        self.search_input.setMinimumWidth(250)
+        self.search_input.setMinimumWidth(240)
         self.search_input.returnPressed.connect(lambda: self.load_catalog(append=False))
         top_row.addWidget(self.search_input)
 
@@ -291,6 +350,79 @@ class CatalogView(QWidget):
 
         offers_layout.addLayout(top_row)
 
+        # --- FILTER & SORT BAR ---
+        filter_bar = QFrame()
+        filter_bar.setObjectName("filterBar")
+        fb_layout = QHBoxLayout(filter_bar)
+        fb_layout.setContentsMargins(14, 10, 14, 10)
+        fb_layout.setSpacing(10)
+
+        self.city_input = QLineEdit()
+        self.city_input.setPlaceholderText("Қала (барлығы)")
+        self.city_input.setMaxLength(120)
+        self.city_input.setMaximumWidth(160)
+        self.city_input.returnPressed.connect(lambda: self.load_catalog(append=False))
+        fb_layout.addWidget(self.city_input)
+
+        self.unit_combo = QComboBox()
+        self.unit_combo.addItem("Барлық бірлік", None)
+        for value, label in UNIT_LABELS:
+            self.unit_combo.addItem(label, value)
+        self.unit_combo.currentIndexChanged.connect(lambda: self.load_catalog(append=False))
+        fb_layout.addWidget(self.unit_combo)
+
+        self.max_price_input = QLineEdit()
+        self.max_price_input.setPlaceholderText("Макс. баға, ₸")
+        self.max_price_input.setMaximumWidth(130)
+        self.max_price_input.returnPressed.connect(lambda: self.load_catalog(append=False))
+        fb_layout.addWidget(self.max_price_input)
+
+        self.sort_combo = QComboBox()
+        for value, label in SORT_OPTIONS:
+            self.sort_combo.addItem(label, value)
+        self.sort_combo.currentIndexChanged.connect(lambda: self.load_catalog(append=False))
+        fb_layout.addWidget(self.sort_combo)
+
+        self.favorites_filter_btn = QPushButton("★ Таңдаулылар")
+        self.favorites_filter_btn.setObjectName("favoritesFilterBtn")
+        self.favorites_filter_btn.setProperty("checked", "false")
+        self.favorites_filter_btn.setVisible(False)
+        self.favorites_filter_btn.clicked.connect(self._toggle_favorites_only)
+        fb_layout.addWidget(self.favorites_filter_btn)
+
+        fb_layout.addStretch(1)
+
+        self.apply_filters_btn = QPushButton("Сүзгілеу")
+        self.apply_filters_btn.clicked.connect(lambda: self.load_catalog(append=False))
+        fb_layout.addWidget(self.apply_filters_btn)
+
+        self.reset_filters_btn = QPushButton("Тазарту")
+        self.reset_filters_btn.setProperty("variant", "link")
+        self.reset_filters_btn.clicked.connect(self._reset_filters)
+        fb_layout.addWidget(self.reset_filters_btn)
+
+        offers_layout.addWidget(filter_bar)
+
+        # --- WSM COMPARE BAR ---
+        self.compare_bar = QFrame()
+        self.compare_bar.setObjectName("compareBar")
+        cb_layout = QHBoxLayout(self.compare_bar)
+        cb_layout.setContentsMargins(16, 10, 16, 10)
+        cb_layout.setSpacing(10)
+        self.compare_label = QLabel()
+        self.compare_label.setObjectName("unitBadge")
+        self.compare_run_btn = QPushButton("WSM салыстыру")
+        self.compare_run_btn.setProperty("variant", "primary")
+        self.compare_run_btn.clicked.connect(self._open_wsm_compare)
+        self.compare_clear_btn = QPushButton("Тазалау")
+        self.compare_clear_btn.clicked.connect(self.clear_compare)
+        cb_layout.addWidget(self.compare_label)
+        cb_layout.addStretch(1)
+        cb_layout.addWidget(self.compare_run_btn)
+        cb_layout.addWidget(self.compare_clear_btn)
+        self.compare_bar.setVisible(False)
+        offers_layout.addWidget(self.compare_bar)
+
         self.booking_feedback = FeedbackBanner()
         offers_layout.addWidget(self.booking_feedback)
 
@@ -311,7 +443,6 @@ class CatalogView(QWidget):
         self.state_banner = FeedbackBanner()
         offers_layout.addWidget(self.state_banner)
 
-        # Styled empty-state dashed card matching the site
         self.empty_card = QFrame()
         self.empty_card.setObjectName("emptyStateCard")
         empty_layout = QVBoxLayout(self.empty_card)
@@ -340,9 +471,10 @@ class CatalogView(QWidget):
         offers_layout.addWidget(self.more_button, alignment=Qt.AlignmentFlag.AlignCenter)
 
         root.addWidget(self.offers_section)
-        root.addStretch(1)
         root.addWidget(SiteFooter())
+        root.setSizeConstraint(QVBoxLayout.SizeConstraint.SetMinimumSize)
 
+        page_wrap.setAlignment(Qt.AlignmentFlag.AlignTop)
         page_wrap.addStretch(1)
         page_wrap.addWidget(inner, stretch=100)
         page_wrap.addStretch(1)
@@ -362,10 +494,80 @@ class CatalogView(QWidget):
     def set_pending_attempt(self, attempt: BookingAttempt | None) -> None:
         self.pending_bar.setVisible(attempt is not None)
 
+    def set_favorites(self, fav_ids: set[str]) -> None:
+        self.favorite_ids = set(fav_ids)
+        is_buyer = self.api.user is not None and self.api.user.get("role") == "buyer"
+        self.favorites_filter_btn.setVisible(is_buyer)
+        if not is_buyer and self.favorites_only:
+            self.favorites_only = False
+            self.favorites_filter_btn.setProperty("checked", "false")
+            repolish(self.favorites_filter_btn)
+        if self.batches:
+            self._render_cards()
+
+    def _toggle_favorites_only(self) -> None:
+        self.favorites_only = not self.favorites_only
+        self.favorites_filter_btn.setProperty("checked", "true" if self.favorites_only else "false")
+        repolish(self.favorites_filter_btn)
+        self.load_catalog(append=False)
+
+    def _handle_card_favorite(self, batch_id: str) -> None:
+        saved = self.on_toggle_favorite(batch_id)
+        if saved:
+            self.favorite_ids.add(batch_id)
+        else:
+            self.favorite_ids.discard(batch_id)
+        if self.favorites_only and not saved:
+            self.load_catalog(append=False)
+        else:
+            self._render_cards()
+
+    def _toggle_compare(self, batch_id: str) -> None:
+        if batch_id in self.compare_ids:
+            self.compare_ids.remove(batch_id)
+        elif len(self.compare_ids) < 10:
+            self.compare_ids.append(batch_id)
+        self._update_compare_bar()
+        self._render_cards()
+
+    def clear_compare(self) -> None:
+        self.compare_ids.clear()
+        self._update_compare_bar()
+        self._render_cards()
+
+    def _update_compare_bar(self) -> None:
+        count = len(self.compare_ids)
+        self.compare_bar.setVisible(count > 0)
+        if count == 1:
+            self.compare_label.setText("Салыстыруға 1 партия таңдалды — тағы кемінде 1 партия таңдаңыз.")
+            self.compare_run_btn.setDisabled(True)
+        else:
+            self.compare_label.setText(f"WSM салыстыруға таңдалды: {count} партия")
+            self.compare_run_btn.setDisabled(False)
+
+    def _open_wsm_compare(self) -> None:
+        if len(self.compare_ids) >= 2:
+            self.on_open_compare(list(self.compare_ids))
+
     def _clear_search(self) -> None:
         self.search_input.clear()
         self.load_catalog(append=False)
         self.search_input.setFocus()
+
+    def _reset_filters(self) -> None:
+        self.search_input.clear()
+        self.city_input.clear()
+        self.max_price_input.clear()
+        self.unit_combo.blockSignals(True)
+        self.unit_combo.setCurrentIndex(0)
+        self.unit_combo.blockSignals(False)
+        self.sort_combo.blockSignals(True)
+        self.sort_combo.setCurrentIndex(0)
+        self.sort_combo.blockSignals(False)
+        self.favorites_only = False
+        self.favorites_filter_btn.setProperty("checked", "false")
+        repolish(self.favorites_filter_btn)
+        self.load_catalog(append=False)
 
     def _column_count(self) -> int:
         width = self.width()
@@ -395,11 +597,17 @@ class CatalogView(QWidget):
         cols = self._column_count()
         self._last_columns = cols
         for index, batch in enumerate(self.batches):
+            bid = str(batch["batch_id"])
             card = ProductCard(
                 batch,
                 user=self.api.user,
+                is_favorite=bid in self.favorite_ids,
+                in_compare=bid in self.compare_ids,
                 on_book=self.on_book,
                 on_switch_to_buyer=self.on_switch_to_buyer,
+                on_open_detail=self.on_open_detail,
+                on_toggle_favorite=self._handle_card_favorite,
+                on_toggle_compare=self._toggle_compare,
             )
             row, col = divmod(index, cols)
             self.grid.addWidget(card, row, col)
@@ -407,6 +615,8 @@ class CatalogView(QWidget):
             self.grid.setColumnStretch(col, 1)
 
     def refresh_card_actions(self) -> None:
+        is_buyer = self.api.user is not None and self.api.user.get("role") == "buyer"
+        self.favorites_filter_btn.setVisible(is_buyer)
         if self.batches:
             self._render_cards()
 
@@ -428,12 +638,31 @@ class CatalogView(QWidget):
         self.more_button.setVisible(False)
         self.state_banner.set_message("Каталог жүктелуде…", "")
 
+        max_price_raw = self.max_price_input.text().strip().replace(",", ".")
+        if max_price_raw:
+            try:
+                if float(max_price_raw) < 0:
+                    raise ValueError
+            except ValueError:
+                self.state_banner.set_message("Максималды баға дұрыс сан болуы керек.", "error")
+                return self.batches
+
         try:
-            page = self.api.list_catalog(
-                q=self.current_query,
-                limit=PAGE_SIZE,
-                offset=self.offset,
-            )
+            if self.favorites_only and self.api.user and self.api.user.get("role") == "buyer":
+                fav_items = self.api.list_favorites()
+                page = [item["batch"] for item in fav_items if item.get("is_available")]
+                has_more = False
+            else:
+                page = self.api.list_catalog(
+                    q=self.current_query,
+                    city=self.city_input.text().strip(),
+                    unit=self.unit_combo.currentData(),
+                    max_price=max_price_raw or None,
+                    sort=self.sort_combo.currentData() or "expires_asc",
+                    limit=PAGE_SIZE,
+                    offset=self.offset,
+                )
+                has_more = len(page) == PAGE_SIZE
         except ApiError as exc:
             self.state_banner.set_message(translate_api_error(exc), "error")
             if append:
@@ -451,13 +680,15 @@ class CatalogView(QWidget):
             self.empty_card.setVisible(False)
         else:
             self.count_label.setVisible(False)
-            self.empty_title.setText(
-                "Іздеу нәтижесі табылмады."
-                if self.current_query
-                else "Қазір қолжетімді партиялар жоқ."
-            )
-            self.empty_action.setVisible(not self.current_query)
+            if self.favorites_only:
+                empty_text = "Таңдаулыларда қолжетімді партиялар жоқ."
+            elif self.current_query or self.city_input.text().strip() or self.unit_combo.currentData() or max_price_raw:
+                empty_text = "Сүзгі немесе іздеу бойынша нәтиже табылмады."
+            else:
+                empty_text = "Қазір қолжетімді партиялар жоқ."
+            self.empty_title.setText(empty_text)
+            self.empty_action.setVisible(not self.favorites_only and not self.current_query)
             self.empty_card.setVisible(True)
 
-        self.more_button.setVisible(len(page) == PAGE_SIZE)
+        self.more_button.setVisible(has_more)
         return self.batches

@@ -62,6 +62,24 @@
             <button class="button button-dark" type="submit">Іздеу</button>
           </form>
         </div>
+        <form id="catalog-filters" class="catalog-filters" aria-label="Сүзгілер және сұрыптау">
+          <input id="filter-city" name="city" type="text" placeholder="Қала (барлығы)" maxlength="120">
+          <select id="filter-unit" name="unit" aria-label="Өлшем бірлігі">
+            <option value="">Барлық бірлік</option>
+            <option value="piece">Дана</option>
+            <option value="kg">Килограмм</option>
+            <option value="portion">Порция</option>
+          </select>
+          <input id="filter-max-price" name="max_price" type="number" min="0" step="1" placeholder="Макс. баға, ₸">
+          <select id="filter-sort" name="sort" aria-label="Сұрыптау">
+            <option value="expires_asc">Мерзімі жақын</option>
+            <option value="price_asc">Ең арзан</option>
+            <option value="price_desc">Ең қымбат</option>
+            <option value="discount_desc">Жеңілдігі жоғары</option>
+          </select>
+          <button class="button button-outline button-small" type="submit">Сүзгілеу</button>
+          <button id="filters-reset" class="button button-text button-small" type="button">Тазарту</button>
+        </form>
         <p id="catalog-booking-feedback" class="feedback" role="status" tabindex="-1" hidden></p>
         <div id="booking-pending" class="feedback booking-pending" hidden>
           <p>Алдыңғы броньдың нәтижесі әзірге белгісіз.</p>

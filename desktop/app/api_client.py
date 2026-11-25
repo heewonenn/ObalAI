@@ -166,12 +166,55 @@ class ObalApiClient:
         self.user = user
         return user
 
-    def list_catalog(self, *, q: str = "", limit: int = 24, offset: int = 0) -> list[dict[str, Any]]:
-        params: dict[str, Any] = {"limit": limit, "offset": offset}
+    def list_catalog(
+        self,
+        *,
+        q: str = "",
+        city: str = "",
+        unit: str | None = None,
+        max_price: str | None = None,
+        min_discount: int | None = None,
+        sort: str = "expires_asc",
+        limit: int = 24,
+        offset: int = 0,
+    ) -> list[dict[str, Any]]:
+        params: dict[str, Any] = {"limit": limit, "offset": offset, "sort": sort}
         cleaned = q.strip()
         if cleaned:
             params["q"] = cleaned
+        cleaned_city = city.strip()
+        if cleaned_city:
+            params["city"] = cleaned_city
+        if unit:
+            params["unit"] = unit
+        if max_price is not None and str(max_price).strip():
+            params["max_price"] = str(max_price).strip()
+        if min_discount is not None and min_discount > 0:
+            params["min_discount"] = min_discount
         return self._request("GET", "/api/catalog", params=params)
+
+    def get_catalog_batch(self, batch_id: str) -> dict[str, Any]:
+        return self._request("GET", f"/api/catalog/{batch_id}")
+
+    def list_favorites(self) -> list[dict[str, Any]]:
+        return self._request("GET", "/api/favorites", authorized=True)
+
+    def add_favorite(self, batch_id: str) -> dict[str, Any]:
+        return self._request("POST", f"/api/favorites/{batch_id}", authorized=True)
+
+    def remove_favorite(self, batch_id: str) -> dict[str, Any]:
+        return self._request("DELETE", f"/api/favorites/{batch_id}", authorized=True)
+
+    def compare_wsm(
+        self,
+        batch_ids: list[str],
+        *,
+        weights: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
+        body: dict[str, Any] = {"batch_ids": batch_ids}
+        if weights is not None:
+            body["weights"] = weights
+        return self._request("POST", "/api/compare/wsm", json_body=body)
 
     def create_reservation(
         self,
