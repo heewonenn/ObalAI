@@ -216,6 +216,17 @@ class ObalApiClient:
             body["weights"] = weights
         return self._request("POST", "/api/compare/wsm", json_body=body)
 
+    def record_batch_view(self, batch_id: str) -> dict[str, Any]:
+        return self._request("POST", f"/api/ai/events/view/{batch_id}", authorized=True)
+
+    def get_buyer_recommendations(self, *, limit: int = 3) -> dict[str, Any]:
+        return self._request(
+            "GET",
+            "/api/ai/recommendations",
+            authorized=True,
+            params={"limit": limit},
+        )
+
     def create_reservation(
         self,
         *,

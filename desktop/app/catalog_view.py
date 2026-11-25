@@ -423,6 +423,41 @@ class CatalogView(QWidget):
         self.compare_bar.setVisible(False)
         offers_layout.addWidget(self.compare_bar)
 
+        # --- BUYER AI RECOMMENDATIONS PANEL ---
+        self.ai_panel = QFrame()
+        self.ai_panel.setObjectName("aiPanel")
+        ai_layout = QVBoxLayout(self.ai_panel)
+        ai_layout.setContentsMargins(18, 16, 18, 16)
+        ai_layout.setSpacing(10)
+
+        ai_header = QHBoxLayout()
+        ai_title_col = QVBoxLayout()
+        ai_title_col.setSpacing(2)
+        ai_title = QLabel("Жеке AI ұсыныстар")
+        ai_title.setObjectName("sectionTitle")
+        self.ai_meta_label = QLabel()
+        self.ai_meta_label.setObjectName("mutedText")
+        self.ai_meta_label.setWordWrap(True)
+        ai_title_col.addWidget(ai_title)
+        ai_title_col.addWidget(self.ai_meta_label)
+        ai_header.addLayout(ai_title_col, stretch=1)
+
+        self.ai_refresh_btn = QPushButton("Жаңарту")
+        self.ai_refresh_btn.clicked.connect(self.load_ai_recommendations)
+        ai_header.addWidget(self.ai_refresh_btn)
+        ai_layout.addLayout(ai_header)
+
+        self.ai_feedback = FeedbackBanner()
+        ai_layout.addWidget(self.ai_feedback)
+
+        self.ai_cards_layout = QHBoxLayout()
+        self.ai_cards_layout.setSpacing(12)
+        ai_layout.addLayout(self.ai_cards_layout)
+
+        self.ai_panel.setVisible(False)
+        self.last_ai_response: dict[str, Any] | None = None
+        offers_layout.addWidget(self.ai_panel)
+
         self.booking_feedback = FeedbackBanner()
         offers_layout.addWidget(self.booking_feedback)
 
@@ -582,6 +617,105 @@ class CatalogView(QWidget):
         cols = self._column_count()
         if cols != self._last_columns and self.batches:
             self._render_cards()
+
+    def _clear_ai_cards(self) -> None:
+        while self.ai_cards_layout.count():
+            item = self.ai_cards_layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.hide()
+                widget.setParent(None)
+                widget.deleteLater()
+
+    def load_ai_recommendations(self) -> dict[str, Any] | None:
+        is_buyer = self.api.user is not None and self.api.user.get("role") == "buyer" and bool(self.api.token)
+        self.ai_panel.setVisible(is_buyer)
+        self._clear_ai_cards()
+        if not is_buyer:
+            self.last_ai_response = None
+            return None
+
+        self.ai_feedback.set_message("AI ұсыныстары есептелуде…", "")
+        try:
+            data = self.api.get_buyer_recommendations(limit=3)
+        except ApiError as exc:
+            self.ai_feedback.set_message(translate_api_error(exc), "error")
+            return None
+
+        self.last_ai_response = data
+        self.ai_meta_label.setText(
+            f"Модель: {data.get('model_version', '')} · "
+            f"Нақты әрекеттер: {data.get('current_interactions', 0)}/{data.get('required_interactions', 3)} · "
+            f"Baseline: {data.get('baseline_used', '')}"
+        )
+
+        if data.get("status") != "ok":
+            self.ai_feedback.set_message(
+                data.get("reason")
+                or "Жеке AI ұсыныстары үшін деректер жеткіліксіз (insufficient_data).",
+                "",
+            )
+            return data
+
+        self.ai_feedback.clear()
+        for rec in data.get("items", []):
+            batch = rec["batch"]
+            product = batch["product"]
+            store = batch["store"]
+            pct = discount_percent(batch["regular_price"], batch["discount_price"])
+            unit_text = unit_label(product["unit"])
+
+            card = QFrame()
+            card.setObjectName("aiCard")
+            card.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+            cl = QVBoxLayout(card)
+            cl.setContentsMargins(14, 12, 14, 14)
+            cl.setSpacing(6)
+
+            top = QHBoxLayout()
+            badge = QLabel(f"AI · {rec['score']:.2f}")
+            badge.setObjectName("aiBadge")
+            top.addWidget(badge)
+            if pct > 0:
+                disc_lbl = QLabel(f"−{pct}%")
+                disc_lbl.setObjectName("discountBadge")
+                top.addWidget(disc_lbl)
+            top.addStretch(1)
+            cl.addLayout(top)
+
+            title = QLabel(product["name"])
+            title.setObjectName("productTitle")
+            title.setWordWrap(True)
+            cl.addWidget(title)
+
+            meta = QLabel(
+                f"{store['name']} · {format_money(batch['discount_price'], batch.get('currency', 'KZT'))} · "
+                f"{format_quantity(batch['quantity_available'])} {unit_text}"
+            )
+            meta.setObjectName("mutedText")
+            meta.setWordWrap(True)
+            cl.addWidget(meta)
+
+            expl = QLabel(rec.get("explanation", ""))
+            expl.setObjectName("mutedText")
+            expl.setWordWrap(True)
+            cl.addWidget(expl)
+
+            cl.addStretch(1)
+            draft = BookingDraft(
+                batch_id=str(batch["batch_id"]),
+                name=product["name"],
+                unit=product["unit"],
+                available=to_decimal(batch["quantity_available"]),
+            )
+            book_btn = QPushButton("Брондау")
+            book_btn.setProperty("variant", "primary")
+            book_btn.clicked.connect(lambda _=False, d=draft: self.on_book(d))
+            cl.addWidget(book_btn)
+
+            self.ai_cards_layout.addWidget(card, stretch=1)
+
+        return data
 
     def _clear_grid(self) -> None:
         while self.grid.count():

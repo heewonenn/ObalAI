@@ -164,6 +164,7 @@ class MainWindow(QMainWindow):
         except ApiError:
             fav_ids = set()
         self.catalog_view.set_favorites(fav_ids)
+        self.catalog_view.load_ai_recommendations()
 
     def toggle_favorite(self, batch_id: str) -> bool:
         user = self.api.user
@@ -173,8 +174,10 @@ class MainWindow(QMainWindow):
         try:
             if currently_saved:
                 self.api.remove_favorite(batch_id)
+                self.catalog_view.load_ai_recommendations()
                 return False
             self.api.add_favorite(batch_id)
+            self.catalog_view.load_ai_recommendations()
             return True
         except ApiError as exc:
             self.catalog_view.set_booking_feedback(translate_api_error(exc), "error")
@@ -187,6 +190,12 @@ class MainWindow(QMainWindow):
             fresh = self.api.get_catalog_batch(bid)
         except ApiError:
             pass
+        if self.api.user and self.api.user.get("role") == "buyer" and self.api.token:
+            try:
+                self.api.record_batch_view(bid)
+                self.catalog_view.load_ai_recommendations()
+            except ApiError:
+                pass
         dialog = ProductDetailDialog(
             fresh,
             user=self.api.user,
@@ -405,6 +414,7 @@ class MainWindow(QMainWindow):
             )
             self.catalog_view.set_booking_feedback(receipt, "success")
             self.catalog_view.load_catalog(append=False)
+            self.catalog_view.load_ai_recommendations()
             return
 
         if dialog.rejected_error_message:
