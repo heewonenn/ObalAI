@@ -22,7 +22,7 @@ from PySide6.QtWidgets import (
 
 from .api_client import ApiError, ObalApiClient, translate_api_error
 from .formatting import format_decimal_api, format_quantity, to_decimal, unit_label
-from .widgets import FeedbackBanner
+from .widgets import FeedbackBanner, FormSymbol, load_logo_pixmap
 
 
 @dataclass
@@ -64,11 +64,16 @@ class AuthDialog(QDialog):
         self.setMinimumWidth(420)
 
         root = QVBoxLayout(self)
-        root.setContentsMargins(24, 22, 24, 22)
+        root.setContentsMargins(28, 24, 28, 24)
         root.setSpacing(12)
 
+        logo_label = QLabel()
+        logo_label.setPixmap(load_logo_pixmap(40))
+        logo_label.setFixedSize(40, 40)
+        root.addWidget(logo_label)
+
         self.title_label = QLabel()
-        self.title_label.setObjectName("pageTitle")
+        self.title_label.setObjectName("dialogTitle")
         root.addWidget(self.title_label)
 
         self.context_banner = FeedbackBanner()
@@ -229,11 +234,13 @@ class BookingDialog(QDialog):
         self.setMinimumWidth(420)
 
         root = QVBoxLayout(self)
-        root.setContentsMargins(24, 22, 24, 22)
+        root.setContentsMargins(28, 24, 28, 24)
         root.setSpacing(12)
 
+        root.addWidget(FormSymbol("✓"))
+
         title = QLabel("Өнімді брондау")
-        title.setObjectName("pageTitle")
+        title.setObjectName("dialogTitle")
         root.addWidget(title)
 
         product_label = QLabel(draft.name)
