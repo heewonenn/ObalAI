@@ -335,3 +335,79 @@ def test_cart_checkout_multi_item_and_delivery(client: TestClient, marketplace_f
     assert deliv.status_code == 201
     assert deliv.json()["fulfillment_method"] == "delivery"
     assert deliv.json()["delivery_address"] == "Алматы, Абай 15, кв 24"
+
+
+def test_buyer_order_history_and_seller_status_transitions(client: TestClient, marketplace_fixture):
+    """Orders remain buyer-scoped while seller transitions use real PostgreSQL rows."""
+    batches = marketplace_fixture["batches"]
+    buyer_headers = marketplace_fixture["buyer_headers"]
+    seller_headers = marketplace_fixture["seller_headers"]
+
+    # A seller cannot access the buyer-only history endpoint.
+    assert client.get("/api/orders", headers=seller_headers).status_code == 403
+
+    # Reserving the complete batch makes it sold out; rejection must restore it atomically.
+    rejected_order = client.post(
+        "/api/orders",
+        headers={**buyer_headers, "Idempotency-Key": str(uuid.uuid4())},
+        json={"batch_id": batches[0]["batch_id"], "quantity": "5"},
+    )
+    assert rejected_order.status_code == 201
+    rejected_id = rejected_order.json()["id"]
+
+    history = client.get("/api/orders", headers=buyer_headers, params={"limit": 1, "offset": 0})
+    assert history.status_code == 200
+    assert len(history.json()) == 1
+    item = history.json()[0]["items"][0]
+    assert item["product_name"].endswith("Сүзбе балғын 5%")
+    assert item["unit"] == "piece"
+    assert Decimal(item["quantity"]) == Decimal("5.000")
+    assert Decimal(item["unit_price"]) == Decimal("600.00")
+    assert Decimal(item["line_total"]) == Decimal("3000.00")
+    assert history.json()[0]["store"]["name"].startswith(marketplace_fixture["prefix"])
+
+    seller_orders = client.get("/api/seller/orders", headers=seller_headers)
+    assert seller_orders.status_code == 200
+    seller_item = next(order for order in seller_orders.json() if order["id"] == rejected_id)["items"][0]
+    assert seller_item["product_name"] == item["product_name"]
+    assert seller_item["unit"] == item["unit"]
+
+    rejected = client.patch(f"/api/seller/orders/{rejected_id}/reject", headers=seller_headers)
+    assert rejected.status_code == 200
+    assert rejected.json()["status"] == "rejected"
+    assert client.patch(f"/api/seller/orders/{rejected_id}/reject", headers=seller_headers).status_code == 409
+
+    restored_batch = client.get(f"/api/catalog/{batches[0]['batch_id']}")
+    assert restored_batch.status_code == 200
+    assert Decimal(restored_batch.json()["quantity_available"]) == Decimal("5.000")
+    buyer_history = client.get("/api/orders", headers=buyer_headers).json()
+    assert next(order for order in buyer_history if order["id"] == rejected_id)["status"] == "rejected"
+
+    # Accepted -> ready -> completed is allowed, but repeating a terminal transition is not.
+    ready_order = client.post(
+        "/api/orders",
+        headers={**buyer_headers, "Idempotency-Key": str(uuid.uuid4())},
+        json={"batch_id": batches[1]["batch_id"], "quantity": "1"},
+    )
+    assert ready_order.status_code == 201
+    ready_id = ready_order.json()["id"]
+    assert client.patch(f"/api/seller/orders/{ready_id}/accept", headers=seller_headers).json()["status"] == "accepted"
+    assert client.patch(f"/api/seller/orders/{ready_id}/ready", headers=seller_headers).json()["status"] == "ready"
+    assert client.patch(f"/api/seller/orders/{ready_id}/complete", headers=seller_headers).json()["status"] == "completed"
+    assert client.patch(f"/api/seller/orders/{ready_id}/complete", headers=seller_headers).status_code == 409
+
+    # Completing an accepted order directly is also a documented valid transition.
+    accepted_order = client.post(
+        "/api/orders",
+        headers={**buyer_headers, "Idempotency-Key": str(uuid.uuid4())},
+        json={"batch_id": batches[2]["batch_id"], "quantity": "1"},
+    )
+    assert accepted_order.status_code == 201
+    accepted_id = accepted_order.json()["id"]
+    assert client.patch(f"/api/seller/orders/{accepted_id}/accept", headers=seller_headers).status_code == 200
+    assert client.patch(f"/api/seller/orders/{accepted_id}/complete", headers=seller_headers).json()["status"] == "completed"
+
+    # Pagination returns separate pages of this buyer's history.
+    first_page = client.get("/api/orders", headers=buyer_headers, params={"limit": 1, "offset": 0}).json()
+    second_page = client.get("/api/orders", headers=buyer_headers, params={"limit": 1, "offset": 1}).json()
+    assert first_page and second_page and first_page[0]["id"] != second_page[0]["id"]

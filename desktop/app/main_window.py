@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
 )
 
 from .api_client import ApiError, ObalApiClient, translate_api_error
+from .buyer_orders_view import BuyerOrdersView
 from .catalog_view import CatalogView
 from .checkout_views import CheckoutView, OrderConfirmationView, ProductDetailView
 from .compare_dialogs import WsmCompareDialog
@@ -74,6 +75,12 @@ class MainWindow(QMainWindow):
         self.nav_seller_btn.setProperty("variant", "nav")
         self.nav_seller_btn.clicked.connect(lambda: self.show_view("seller"))
         header_layout.addWidget(self.nav_seller_btn)
+
+        self.nav_buyer_orders_btn = QPushButton("Тапсырыстарым")
+        self.nav_buyer_orders_btn.setProperty("variant", "nav")
+        self.nav_buyer_orders_btn.setVisible(False)
+        self.nav_buyer_orders_btn.clicked.connect(lambda: self.show_view("buyer_orders"))
+        header_layout.addWidget(self.nav_buyer_orders_btn)
 
         header_layout.addStretch(1)
 
@@ -138,12 +145,18 @@ class MainWindow(QMainWindow):
             on_view_published=self._view_published_product,
             on_back_to_catalog=lambda: self.show_view("catalog"),
         )
+        self.buyer_orders_view = BuyerOrdersView(
+            self.api,
+            on_request_auth=lambda mode, role: self.open_auth(mode, default_role=role),
+            on_back_to_catalog=lambda: self.show_view("catalog"),
+        )
 
         self.stack.addWidget(self.catalog_view)
         self.stack.addWidget(self.detail_view)
         self.stack.addWidget(self.checkout_view)
         self.stack.addWidget(self.confirmation_view)
         self.stack.addWidget(self.seller_view)
+        self.stack.addWidget(self.buyer_orders_view)
         layout.addWidget(self.stack, stretch=1)
 
         self.setCentralWidget(central)
@@ -182,6 +195,7 @@ class MainWindow(QMainWindow):
         self.sign_in_btn.setVisible(not signed_in)
         self.sign_out_btn.setVisible(signed_in)
         self.session_label.setVisible(signed_in)
+        self.nav_buyer_orders_btn.setVisible(bool(user and user.get("role") == "buyer"))
         if signed_in:
             self.session_label.setText(f"{role_label(user.get('role'))} · {user.get('email', '')}")
         else:
@@ -295,9 +309,12 @@ class MainWindow(QMainWindow):
         self.deferred_booking = None
         self.return_to_checkout_after_auth = False
         self.seller_view.reset_state()
+        self.buyer_orders_view.reset_state()
         self._render_session()
         if self.current_view == "seller":
             self.seller_view.refresh()
+        elif self.current_view == "buyer_orders":
+            self.buyer_orders_view.refresh()
         else:
             self.catalog_view.refresh_card_actions()
 
@@ -306,12 +323,13 @@ class MainWindow(QMainWindow):
         self.deferred_booking = None
         self.return_to_checkout_after_auth = False
         self.seller_view.reset_state()
+        self.buyer_orders_view.reset_state()
         self.catalog_view.set_booking_feedback()
         self._render_session()
         self.show_view("catalog")
 
     def show_view(self, view_name: str) -> None:
-        valid = {"catalog", "detail", "checkout", "confirmation", "seller"}
+        valid = {"catalog", "detail", "checkout", "confirmation", "seller", "buyer_orders"}
         self.current_view = view_name if view_name in valid else "catalog"
         view_map = {
             "catalog": self.catalog_view,
@@ -319,18 +337,23 @@ class MainWindow(QMainWindow):
             "checkout": self.checkout_view,
             "confirmation": self.confirmation_view,
             "seller": self.seller_view,
+            "buyer_orders": self.buyer_orders_view,
         }
         self.stack.setCurrentWidget(view_map[self.current_view])
 
         self.nav_catalog_btn.setProperty("active", "true" if self.current_view in {"catalog", "detail"} else "false")
         self.nav_seller_btn.setProperty("active", "true" if self.current_view == "seller" else "false")
+        self.nav_buyer_orders_btn.setProperty("active", "true" if self.current_view == "buyer_orders" else "false")
         self.nav_cart_btn.setProperty("active", "true" if self.current_view in {"checkout", "confirmation"} else "false")
         repolish(self.nav_catalog_btn)
         repolish(self.nav_seller_btn)
+        repolish(self.nav_buyer_orders_btn)
         repolish(self.nav_cart_btn)
 
         if self.current_view == "seller":
             self.seller_view.refresh()
+        elif self.current_view == "buyer_orders":
+            self.buyer_orders_view.refresh()
         elif self.current_view == "catalog":
             self.catalog_view.load_catalog(append=False)
         elif self.current_view == "checkout":
@@ -389,6 +412,8 @@ class MainWindow(QMainWindow):
 
         if self.current_view == "seller":
             self.seller_view.refresh()
+        elif self.current_view == "buyer_orders":
+            self.buyer_orders_view.refresh()
         elif self.current_view == "detail" and self.detail_view.batch is not None:
             bid = str(self.detail_view.batch["batch_id"])
             self.detail_view.set_batch(self.detail_view.batch, is_favorite=bid in self.catalog_view.favorite_ids)
