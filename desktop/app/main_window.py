@@ -14,8 +14,9 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from .api_client import ObalApiClient
+from .api_client import ApiError, ObalApiClient, translate_api_error
 from .catalog_view import CatalogView
+from .compare_dialogs import ProductDetailDialog, WsmCompareDialog
 from .dialogs import AuthDialog, BookingAttempt, BookingDraft, BookingDialog
 from .formatting import format_money, format_quantity, role_label, to_decimal, unit_label
 from .seller_view import SellerView
@@ -100,6 +101,9 @@ class MainWindow(QMainWindow):
             on_switch_to_buyer=self._start_buyer_switch_for_booking,
             on_retry_pending=self._retry_pending_booking,
             on_open_seller=lambda: self.show_view("seller"),
+            on_open_detail=self.open_product_detail,
+            on_open_compare=self.open_wsm_compare,
+            on_toggle_favorite=self.toggle_favorite,
         )
         self.seller_view = SellerView(
             self.api,
@@ -147,6 +151,71 @@ class MainWindow(QMainWindow):
         else:
             self.session_label.clear()
         self.catalog_view.set_pending_attempt(self._current_pending_attempt())
+        self._sync_favorites()
+
+    def _sync_favorites(self) -> None:
+        user = self.api.user
+        if not user or user.get("role") != "buyer" or not self.api.token:
+            self.catalog_view.set_favorites(set())
+            return
+        try:
+            items = self.api.list_favorites()
+            fav_ids = {str(item["batch"]["batch_id"]) for item in items}
+        except ApiError:
+            fav_ids = set()
+        self.catalog_view.set_favorites(fav_ids)
+
+    def toggle_favorite(self, batch_id: str) -> bool:
+        user = self.api.user
+        if not user or user.get("role") != "buyer" or not self.api.token:
+            return False
+        currently_saved = batch_id in self.catalog_view.favorite_ids
+        try:
+            if currently_saved:
+                self.api.remove_favorite(batch_id)
+                return False
+            self.api.add_favorite(batch_id)
+            return True
+        except ApiError as exc:
+            self.catalog_view.set_booking_feedback(translate_api_error(exc), "error")
+            return currently_saved
+
+    def open_product_detail(self, batch: dict) -> None:
+        bid = str(batch["batch_id"])
+        fresh = batch
+        try:
+            fresh = self.api.get_catalog_batch(bid)
+        except ApiError:
+            pass
+        dialog = ProductDetailDialog(
+            fresh,
+            user=self.api.user,
+            is_favorite=bid in self.catalog_view.favorite_ids,
+            on_book=self.open_booking,
+            on_switch_to_buyer=self._start_buyer_switch_for_booking,
+            on_toggle_favorite=self._toggle_favorite_from_detail,
+            parent=self,
+        )
+        dialog.exec()
+
+    def _toggle_favorite_from_detail(self, batch_id: str) -> bool:
+        saved = self.toggle_favorite(batch_id)
+        if saved:
+            self.catalog_view.favorite_ids.add(batch_id)
+        else:
+            self.catalog_view.favorite_ids.discard(batch_id)
+        self.catalog_view.refresh_card_actions()
+        return saved
+
+    def open_wsm_compare(self, batch_ids: list[str]) -> None:
+        dialog = WsmCompareDialog(
+            self.api,
+            batch_ids=batch_ids,
+            on_book=self.open_booking,
+            on_switch_to_buyer=self._start_buyer_switch_for_booking,
+            parent=self,
+        )
+        dialog.exec()
 
     def _handle_unauthorized(self) -> None:
         self.deferred_booking = None

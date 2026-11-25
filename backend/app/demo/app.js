@@ -14,6 +14,8 @@ const authSubmit = byId("auth-submit");
 const authToggle = byId("auth-toggle");
 const authFeedback = byId("auth-feedback");
 const catalogSearch = byId("catalog-search");
+const catalogFilters = byId("catalog-filters");
+const filtersReset = byId("filters-reset");
 const catalogList = byId("catalog-list");
 const catalogState = byId("catalog-state");
 const catalogCount = byId("catalog-count");
@@ -536,8 +538,21 @@ async function loadCatalog({ append = false } = {}) {
   catalogClear.hidden = catalogQuery.length === 0;
   if (catalogMore) catalogMore.hidden = true;
   setFeedback(catalogState, "Каталог жүктелуде…", "loading");
-  const params = new URLSearchParams({ limit: String(pageSize), offset: String(catalogOffset) });
+  const filterVals = catalogFilters ? formValues(catalogFilters) : {};
+  const cityFilter = (filterVals.city || "").trim();
+  const unitFilter = (filterVals.unit || "").trim();
+  const maxPriceFilter = (filterVals.max_price || "").trim();
+  const sortFilter = (filterVals.sort || "expires_asc").trim();
+  const hasFilters = Boolean(catalogQuery || cityFilter || unitFilter || maxPriceFilter);
+  const params = new URLSearchParams({
+    limit: String(pageSize),
+    offset: String(catalogOffset),
+    sort: sortFilter,
+  });
   if (catalogQuery) params.set("q", catalogQuery);
+  if (cityFilter) params.set("city", cityFilter);
+  if (unitFilter) params.set("unit", unitFilter);
+  if (maxPriceFilter) params.set("max_price", maxPriceFilter);
   try {
     const batches = await api(`/api/catalog?${params}`, { signal: request.signal });
     if (catalogRequest !== request) return;
@@ -548,7 +563,7 @@ async function loadCatalog({ append = false } = {}) {
     catalogCount.hidden = catalogOffset === 0;
     if (catalogMore) catalogMore.hidden = batches.length < pageSize;
     if (catalogOffset === 0) {
-      const message = catalogQuery ? "Іздеу нәтижесі табылмады." : "Қазір қолжетімді партиялар жоқ.";
+      const message = hasFilters ? "Сүзгі немесе іздеу бойынша нәтиже табылмады." : "Қазір қолжетімді партиялар жоқ.";
       setFeedback(catalogState, message, "empty");
     } else {
       setFeedback(catalogState);
@@ -744,6 +759,18 @@ signOut.addEventListener("click", () => {
 });
 catalogSearch.addEventListener("submit", (event) => {
   event.preventDefault();
+  loadCatalog();
+});
+catalogFilters?.addEventListener("submit", (event) => {
+  event.preventDefault();
+  loadCatalog();
+});
+catalogFilters?.querySelectorAll("select").forEach((select) => {
+  select.addEventListener("change", () => loadCatalog());
+});
+filtersReset?.addEventListener("click", () => {
+  catalogSearch.reset();
+  catalogFilters?.reset();
   loadCatalog();
 });
 catalogClear.addEventListener("click", (event) => {
