@@ -51,6 +51,10 @@ def translate_api_error(error: Exception) -> str:
         ),
         "Order not found": "Тапсырыс табылмады.",
         "Only reserved orders can be accepted": "Бұл тапсырыс бұрын расталған немесе өңделген.",
+        "Only reserved orders can be rejected": "Тек брондалған тапсырыстан бас тартуға болады.",
+        "Only accepted orders can be marked ready": "Тек расталған тапсырыс дайын деп белгіленеді.",
+        "Only accepted or ready orders can be completed": "Тек расталған не дайын тапсырысты аяқтауға болады.",
+        "Order inventory is unavailable": "Тапсырыстың партиялары енді қолжетімсіз.",
         "Invalid or expired token": "Сеанстың уақыты аяқталды. Қайта кіріңіз.",
         "Bearer token required": "Сеанстың уақыты аяқталды. Қайта кіріңіз.",
     }
@@ -269,6 +273,14 @@ class ObalApiClient:
             json_body=payload,
         )
 
+    def list_buyer_orders(self, *, limit: int = 50, offset: int = 0) -> list[dict[str, Any]]:
+        return self._request(
+            "GET",
+            "/api/orders",
+            authorized=True,
+            params={"limit": limit, "offset": offset},
+        )
+
     def get_seller_store(self) -> dict[str, Any] | None:
         try:
             return self._request("GET", "/api/seller/store", authorized=True)
@@ -332,3 +344,12 @@ class ObalApiClient:
 
     def accept_seller_order(self, order_id: str) -> dict[str, Any]:
         return self._request("PATCH", f"/api/seller/orders/{order_id}/accept", authorized=True)
+
+    def reject_seller_order(self, order_id: str) -> dict[str, Any]:
+        return self._request("PATCH", f"/api/seller/orders/{order_id}/reject", authorized=True)
+
+    def mark_seller_order_ready(self, order_id: str) -> dict[str, Any]:
+        return self._request("PATCH", f"/api/seller/orders/{order_id}/ready", authorized=True)
+
+    def complete_seller_order(self, order_id: str) -> dict[str, Any]:
+        return self._request("PATCH", f"/api/seller/orders/{order_id}/complete", authorized=True)

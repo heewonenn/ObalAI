@@ -29,6 +29,7 @@ from .formatting import (
     format_money,
     format_quantity,
     order_status_label,
+    unit_label,
 )
 from .widgets import FeedbackBanner, FormSymbol, SiteFooter, repolish
 
@@ -59,7 +60,7 @@ class SellerView(QWidget):
         self.orders: list[dict[str, Any]] = []
         self.orders_offset = 0
         self.orders_has_more = False
-        self.confirming_ids: set[str] = set()
+        self.transitioning_order_ids: set[str] = set()
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
@@ -354,7 +355,7 @@ class SellerView(QWidget):
         self.orders = []
         self.orders_offset = 0
         self.orders_has_more = False
-        self.confirming_ids.clear()
+        self.transitioning_order_ids.clear()
         self.store_name_input.clear()
         self.store_city_input.clear()
         self.store_address_input.clear()
@@ -588,9 +589,9 @@ class SellerView(QWidget):
             layout.addWidget(meta)
 
             for item in order.get("items", []):
-                batch_short = str(item["batch_id"])[:8]
                 line = QLabel(
-                    f"• Партия №{batch_short} · Саны: {format_quantity(item['quantity'])} · "
+                    f"• {item.get('product_name', 'Өнім')} · "
+                    f"{format_quantity(item['quantity'])} {unit_label(item.get('unit', 'piece'))} · "
                     f"Бірлік бағасы: {format_money(item['unit_price'], currency)}"
                 )
                 line.setWordWrap(True)
@@ -599,24 +600,55 @@ class SellerView(QWidget):
             if status == "reserved":
                 accept_btn = QPushButton("Растау")
                 accept_btn.setProperty("variant", "primary")
-                accept_btn.setDisabled(order_id in self.confirming_ids)
+                accept_btn.setDisabled(order_id in self.transitioning_order_ids)
                 accept_btn.setObjectName(f"acceptOrder_{order_id}")
-                accept_btn.clicked.connect(lambda _=False, oid=order_id: self._accept_order(oid))
+                accept_btn.clicked.connect(lambda _=False, oid=order_id: self._transition_order(oid, "accept"))
                 layout.addWidget(accept_btn, alignment=Qt.AlignmentFlag.AlignLeft)
+                reject_btn = QPushButton("Қабылдамау")
+                reject_btn.setDisabled(order_id in self.transitioning_order_ids)
+                reject_btn.clicked.connect(lambda _=False, oid=order_id: self._transition_order(oid, "reject"))
+                layout.addWidget(reject_btn, alignment=Qt.AlignmentFlag.AlignLeft)
+            elif status == "accepted":
+                ready_btn = QPushButton("Дайын")
+                ready_btn.setProperty("variant", "primary")
+                ready_btn.setDisabled(order_id in self.transitioning_order_ids)
+                ready_btn.clicked.connect(lambda _=False, oid=order_id: self._transition_order(oid, "ready"))
+                layout.addWidget(ready_btn, alignment=Qt.AlignmentFlag.AlignLeft)
+                complete_btn = QPushButton("Аяқталды")
+                complete_btn.setDisabled(order_id in self.transitioning_order_ids)
+                complete_btn.clicked.connect(lambda _=False, oid=order_id: self._transition_order(oid, "complete"))
+                layout.addWidget(complete_btn, alignment=Qt.AlignmentFlag.AlignLeft)
+            elif status == "ready":
+                complete_btn = QPushButton("Аяқталды")
+                complete_btn.setProperty("variant", "primary")
+                complete_btn.setDisabled(order_id in self.transitioning_order_ids)
+                complete_btn.clicked.connect(lambda _=False, oid=order_id: self._transition_order(oid, "complete"))
+                layout.addWidget(complete_btn, alignment=Qt.AlignmentFlag.AlignLeft)
 
             self.orders_container.addWidget(card)
 
-    def _accept_order(self, order_id: str) -> None:
-        if order_id in self.confirming_ids:
+    def _transition_order(self, order_id: str, action: str) -> None:
+        if order_id in self.transitioning_order_ids:
             return
-        self.confirming_ids.add(order_id)
+        self.transitioning_order_ids.add(order_id)
         self.orders_action_feedback.clear()
         self._render_orders()
 
         try:
-            updated = self.api.accept_seller_order(order_id)
+            if action == "accept":
+                updated = self.api.accept_seller_order(order_id)
+                success = "расталды"
+            elif action == "reject":
+                updated = self.api.reject_seller_order(order_id)
+                success = "қабылданбады"
+            elif action == "ready":
+                updated = self.api.mark_seller_order_ready(order_id)
+                success = "дайын деп белгіленді"
+            else:
+                updated = self.api.complete_seller_order(order_id)
+                success = "аяқталды"
         except ApiError as exc:
-            self.confirming_ids.discard(order_id)
+            self.transitioning_order_ids.discard(order_id)
             self.orders_action_feedback.set_message(translate_api_error(exc), "error")
             if exc.status_code in {404, 409}:
                 self.load_orders(append=False)
@@ -624,12 +656,12 @@ class SellerView(QWidget):
                 self._render_orders()
             return
 
-        self.confirming_ids.discard(order_id)
+        self.transitioning_order_ids.discard(order_id)
         for order in self.orders:
             if str(order["id"]) == order_id:
                 order["status"] = updated["status"]
         self._render_orders()
         self.orders_action_feedback.set_message(
-            f"Тапсырыс №{order_id[:8]} расталды.",
+            f"Тапсырыс №{order_id[:8]} {success}.",
             "success",
         )

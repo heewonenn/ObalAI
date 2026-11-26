@@ -230,6 +230,21 @@ QLabel#statusPill[orderStatus="accepted"] {
     color: #183a25;
 }
 
+QLabel#statusPill[orderStatus="ready"] {
+    background-color: #dce9ef;
+    color: #1f5261;
+}
+
+QLabel#statusPill[orderStatus="completed"] {
+    background-color: #e2ebd7;
+    color: #183a25;
+}
+
+QLabel#statusPill[orderStatus="rejected"] {
+    background-color: #f5dfda;
+    color: #8e372d;
+}
+
 QLabel#sellerBookingHint {
     background-color: #f0f1e7;
     border: 1px solid #d9dacb;
