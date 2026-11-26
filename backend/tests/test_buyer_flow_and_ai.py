@@ -93,6 +93,14 @@ def marketplace_fixture(client: TestClient):
                 {"b": buyer_email},
             )
             conn.execute(
+                text(
+                    "DELETE FROM price_history WHERE batch_id IN ("
+                    "SELECT ib.id FROM inventory_batches ib JOIN stores s ON s.id = ib.store_id "
+                    "JOIN users u ON u.id = s.owner_user_id WHERE u.email = :s)"
+                ),
+                {"s": seller_email},
+            )
+            conn.execute(
                 text("DELETE FROM orders WHERE buyer_user_id IN (SELECT id FROM users WHERE email = :b)"),
                 {"b": buyer_email},
             )
@@ -411,3 +419,143 @@ def test_buyer_order_history_and_seller_status_transitions(client: TestClient, m
     first_page = client.get("/api/orders", headers=buyer_headers, params={"limit": 1, "offset": 0}).json()
     second_page = client.get("/api/orders", headers=buyer_headers, params={"limit": 1, "offset": 1}).json()
     assert first_page and second_page and first_page[0]["id"] != second_page[0]["id"]
+
+
+def test_seller_batch_management_and_price_history(client: TestClient, marketplace_fixture):
+    seller_headers = marketplace_fixture["seller_headers"]
+    buyer_headers = marketplace_fixture["buyer_headers"]
+    batch = marketplace_fixture["batches"][0]
+    batch_id = batch["batch_id"]
+
+    # Listing is seller-only and includes every own batch with its product data.
+    assert client.get("/api/seller/batches", headers=buyer_headers).status_code == 403
+    listed = client.get("/api/seller/batches", headers=seller_headers)
+    assert listed.status_code == 200
+    mine = next(item for item in listed.json() if item["batch_id"] == batch_id)
+    assert mine["product"]["name"].endswith("Сүзбе балғын 5%")
+    assert mine["product"]["unit"] == "piece"
+    assert mine["status"] == "active"
+
+    paused = client.patch(f"/api/seller/batches/{batch_id}", headers=seller_headers, json={"status": "paused"})
+    assert paused.status_code == 200
+    assert paused.json()["status"] == "paused"
+    assert client.patch(
+        f"/api/seller/batches/{batch_id}", headers=seller_headers, json={"status": "paused"}
+    ).status_code == 409
+    resumed = client.patch(f"/api/seller/batches/{batch_id}", headers=seller_headers, json={"status": "active"})
+    assert resumed.status_code == 200
+    assert resumed.json()["status"] == "active"
+
+    price_change = client.patch(
+        f"/api/seller/batches/{batch_id}",
+        headers=seller_headers,
+        json={"discount_price": "500.00"},
+    )
+    assert price_change.status_code == 200
+    assert Decimal(price_change.json()["discount_price"]) == Decimal("500.00")
+    with engine.connect() as conn:
+        history = conn.execute(
+            text(
+                "SELECT old_discount_price, new_discount_price, changed_by_user_id "
+                "FROM price_history WHERE batch_id = :batch_id"
+            ),
+            {"batch_id": batch_id},
+        ).mappings().all()
+    assert len(history) == 1
+    assert Decimal(history[0]["old_discount_price"]) == Decimal("600.00")
+    assert Decimal(history[0]["new_discount_price"]) == Decimal("500.00")
+    assert history[0]["changed_by_user_id"]
+
+    # Sending the same price does not manufacture a price-history observation.
+    same_price = client.patch(
+        f"/api/seller/batches/{batch_id}",
+        headers=seller_headers,
+        json={"discount_price": "500.00"},
+    )
+    assert same_price.status_code == 200
+    with engine.connect() as conn:
+        count = conn.execute(
+            text("SELECT count(*) FROM price_history WHERE batch_id = :batch_id"), {"batch_id": batch_id}
+        ).scalar_one()
+    assert count == 1
+
+    # A failed combined update rolls back the status change as well as the bad price.
+    invalid = client.patch(
+        f"/api/seller/batches/{batch_id}",
+        headers=seller_headers,
+        json={"status": "paused", "discount_price": "1001.00"},
+    )
+    assert invalid.status_code == 422
+    current = next(
+        item for item in client.get("/api/seller/batches", headers=seller_headers).json() if item["batch_id"] == batch_id
+    )
+    assert current["status"] == "active"
+    assert Decimal(current["discount_price"]) == Decimal("500.00")
+
+
+def test_seller_batch_endpoints_hide_foreign_store_batches(client: TestClient, marketplace_fixture):
+    """A seller cannot discover or mutate batches belonging to a different store."""
+    suffix = uuid.uuid4().hex[:8]
+    email = f"pytest_other_seller_{suffix}@example.com"
+    password = "PytestPassword123!"
+    prefix = f"PyTestForeign_{suffix}_"
+    original_seller_headers = marketplace_fixture["seller_headers"]
+
+    registered = client.post(
+        "/api/auth/register",
+        json={"email": email, "password": password, "role": "seller"},
+    )
+    assert registered.status_code == 201
+    token = client.post("/api/auth/login", json={"email": email, "password": password}).json()["access_token"]
+    foreign_headers = {"Authorization": f"Bearer {token}"}
+    store = client.post(
+        "/api/seller/store",
+        headers=foreign_headers,
+        json={"name": f"{prefix}Store", "city": "OtherCity", "address": "Other 1"},
+    )
+    assert store.status_code == 201
+    foreign_batch = client.post(
+        "/api/seller/batches",
+        headers=foreign_headers,
+        json={
+            "product": {"name": f"{prefix}Өнім", "unit": "piece"},
+            "quantity": "2",
+            "regular_price": "900.00",
+            "discount_price": "500.00",
+            "expires_at": (datetime.now(timezone.utc) + timedelta(hours=24)).isoformat(),
+        },
+    )
+    assert foreign_batch.status_code == 201
+    foreign_batch_id = foreign_batch.json()["batch_id"]
+
+    try:
+        visible_ids = {item["batch_id"] for item in client.get("/api/seller/batches", headers=original_seller_headers).json()}
+        assert foreign_batch_id not in visible_ids
+        assert client.patch(
+            f"/api/seller/batches/{foreign_batch_id}",
+            headers=original_seller_headers,
+            json={"status": "paused"},
+        ).status_code == 404
+    finally:
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "DELETE FROM price_history WHERE batch_id IN ("
+                    "SELECT ib.id FROM inventory_batches ib JOIN stores s ON s.id = ib.store_id "
+                    "JOIN users u ON u.id = s.owner_user_id WHERE u.email = :email)"
+                ),
+                {"email": email},
+            )
+            conn.execute(
+                text(
+                    "DELETE FROM inventory_batches WHERE store_id IN ("
+                    "SELECT s.id FROM stores s JOIN users u ON u.id = s.owner_user_id WHERE u.email = :email)"
+                ),
+                {"email": email},
+            )
+            conn.execute(text("DELETE FROM products WHERE name LIKE :prefix"), {"prefix": f"{prefix}%"})
+            conn.execute(
+                text("DELETE FROM stores WHERE owner_user_id IN (SELECT id FROM users WHERE email = :email)"),
+                {"email": email},
+            )
+            conn.execute(text("DELETE FROM users WHERE email = :email"), {"email": email})

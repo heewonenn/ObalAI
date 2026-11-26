@@ -55,6 +55,9 @@ def translate_api_error(error: Exception) -> str:
         "Only accepted orders can be marked ready": "Тек расталған тапсырыс дайын деп белгіленеді.",
         "Only accepted or ready orders can be completed": "Тек расталған не дайын тапсырысты аяқтауға болады.",
         "Order inventory is unavailable": "Тапсырыстың партиялары енді қолжетімсіз.",
+        "Only active batches can be paused": "Тек белсенді партияны тоқтатуға болады.",
+        "Only paused batches can be activated": "Тек тоқтатылған партияны іске қосуға болады.",
+        "Discount price must not exceed regular price": "Жеңілдік бағасы бастапқы бағадан аспауы керек.",
         "Invalid or expired token": "Сеанстың уақыты аяқталды. Қайта кіріңіз.",
         "Bearer token required": "Сеанстың уақыты аяқталды. Қайта кіріңіз.",
     }
@@ -332,6 +335,28 @@ class ObalApiClient:
                 "discount_price": discount_price,
                 "expires_at": expires_at_iso,
             },
+        )
+
+    def list_seller_batches(self) -> list[dict[str, Any]]:
+        return self._request("GET", "/api/seller/batches", authorized=True)
+
+    def update_seller_batch(
+        self,
+        batch_id: str,
+        *,
+        status: str | None = None,
+        discount_price: str | None = None,
+    ) -> dict[str, Any]:
+        payload: dict[str, Any] = {}
+        if status is not None:
+            payload["status"] = status
+        if discount_price is not None:
+            payload["discount_price"] = discount_price
+        return self._request(
+            "PATCH",
+            f"/api/seller/batches/{batch_id}",
+            authorized=True,
+            json_body=payload,
         )
 
     def list_seller_orders(self, *, limit: int = 50, offset: int = 0) -> list[dict[str, Any]]:

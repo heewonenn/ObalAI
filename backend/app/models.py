@@ -37,6 +37,7 @@ class User(Base):
     store: Mapped['Store | None'] = relationship(back_populates='owner', uselist=False)
     favorites: Mapped[list['Favorite']] = relationship(back_populates='user', cascade='all, delete-orphan')
     orders: Mapped[list['Order']] = relationship(back_populates='buyer')
+    price_changes: Mapped[list['PriceHistory']] = relationship(back_populates='changed_by')
 
 
 class Store(Base):
@@ -125,6 +126,33 @@ class InventoryBatch(Base):
     product: Mapped[Product] = relationship(back_populates='batches')
     favorites: Mapped[list['Favorite']] = relationship(back_populates='batch', cascade='all, delete-orphan')
     order_items: Mapped[list['OrderItem']] = relationship(back_populates='batch')
+    price_history: Mapped[list['PriceHistory']] = relationship(back_populates='batch')
+
+
+class PriceHistory(Base):
+    __tablename__ = 'price_history'
+    __table_args__ = (
+        CheckConstraint('old_discount_price >= 0', name='ck_price_history_old_discount_price_nonnegative'),
+        CheckConstraint('new_discount_price >= 0', name='ck_price_history_new_discount_price_nonnegative'),
+        Index('ix_price_history_batch_changed_at', 'batch_id', text('changed_at DESC')),
+    )
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    batch_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey('inventory_batches.id', ondelete='RESTRICT'),
+        nullable=False,
+    )
+    old_discount_price: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    new_discount_price: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    changed_by_user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey('users.id', ondelete='RESTRICT'),
+        nullable=False,
+    )
+    changed_at: Mapped[datetime] = created_timestamp()
+    batch: Mapped[InventoryBatch] = relationship(back_populates='price_history')
+    changed_by: Mapped[User] = relationship(back_populates='price_changes')
 
 
 class Favorite(Base):

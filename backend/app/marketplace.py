@@ -7,11 +7,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator, model_validator
 from sqlalchemy import case, func, select
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session, contains_eager
+from sqlalchemy.orm import Session, contains_eager, selectinload
 
 from .database import get_db
 from .dependencies import require_seller
-from .models import InventoryBatch, Product, Store, User
+from .models import InventoryBatch, PriceHistory, Product, Store, User
 
 
 router = APIRouter(prefix="/api")
@@ -94,6 +94,36 @@ class BatchResponse(BaseModel):
     expires_at: datetime
 
 
+class SellerBatchResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    batch_id: UUID = Field(validation_alias="id")
+    product_id: UUID
+    product: ProductSummary
+    quantity_total: Decimal
+    quantity_available: Decimal
+    regular_price: Decimal
+    discount_price: Decimal
+    currency: Literal["KZT"]
+    expires_at: datetime
+    status: Literal["active", "paused", "sold_out", "expired"]
+    created_at: datetime
+    updated_at: datetime
+
+
+class SellerBatchUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: Literal["active", "paused"] | None = None
+    discount_price: Decimal | None = Field(default=None, ge=0, max_digits=12, decimal_places=2)
+
+    @model_validator(mode="after")
+    def require_a_change(self) -> "SellerBatchUpdate":
+        if self.status is None and self.discount_price is None:
+            raise ValueError("Provide status or discount_price")
+        return self
+
+
 @router.get("/seller/store", response_model=StoreResponse, tags=["seller"])
 def get_store(seller: User = Depends(require_seller), db: Session = Depends(get_db)):
     store = db.scalar(select(Store).where(Store.owner_user_id == seller.id))
@@ -141,6 +171,68 @@ def publish_batch(
         expires_at=payload.expires_at,
     )
     db.add(batch)
+    db.commit()
+    db.refresh(batch)
+    return batch
+
+
+@router.get("/seller/batches", response_model=list[SellerBatchResponse], tags=["seller"])
+def list_seller_batches(
+    seller: User = Depends(require_seller),
+    db: Session = Depends(get_db),
+) -> list[InventoryBatch]:
+    return list(
+        db.scalars(
+            select(InventoryBatch)
+            .join(InventoryBatch.store)
+            .options(selectinload(InventoryBatch.product))
+            .where(Store.owner_user_id == seller.id)
+            .order_by(InventoryBatch.created_at.desc(), InventoryBatch.id.desc())
+        ).all()
+    )
+
+
+@router.patch("/seller/batches/{batch_id}", response_model=SellerBatchResponse, tags=["seller"])
+def update_seller_batch(
+    batch_id: UUID,
+    payload: SellerBatchUpdate,
+    seller: User = Depends(require_seller),
+    db: Session = Depends(get_db),
+) -> InventoryBatch:
+    batch = db.scalar(
+        select(InventoryBatch)
+        .join(InventoryBatch.store)
+        .options(selectinload(InventoryBatch.product))
+        .where(InventoryBatch.id == batch_id, Store.owner_user_id == seller.id)
+        .with_for_update(of=InventoryBatch)
+    )
+    if batch is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Batch not found")
+
+    if payload.status is not None:
+        if payload.status == "paused" and batch.status != "active":
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Only active batches can be paused")
+        if payload.status == "active" and batch.status != "paused":
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Only paused batches can be activated")
+        batch.status = payload.status
+
+    if payload.discount_price is not None:
+        if payload.discount_price > batch.regular_price:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Discount price must not exceed regular price",
+            )
+        if payload.discount_price != batch.discount_price:
+            db.add(
+                PriceHistory(
+                    batch_id=batch.id,
+                    old_discount_price=batch.discount_price,
+                    new_discount_price=payload.discount_price,
+                    changed_by_user_id=seller.id,
+                )
+            )
+            batch.discount_price = payload.discount_price
+
     db.commit()
     db.refresh(batch)
     return batch

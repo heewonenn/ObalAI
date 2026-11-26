@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
     QDoubleSpinBox,
     QFrame,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
     QLineEdit,
     QPlainTextEdit,
@@ -24,6 +25,7 @@ from PySide6.QtWidgets import (
 from .api_client import ApiError, ObalApiClient, translate_api_error
 from .formatting import (
     UNIT_LABELS,
+    batch_status_label,
     format_datetime,
     format_decimal_api,
     format_money,
@@ -57,6 +59,8 @@ class SellerView(QWidget):
 
         self.store: dict[str, Any] | None = None
         self.published_product_name: str | None = None
+        self.batches: list[dict[str, Any]] = []
+        self.updating_batch_ids: set[str] = set()
         self.orders: list[dict[str, Any]] = []
         self.orders_offset = 0
         self.orders_has_more = False
@@ -301,7 +305,31 @@ class SellerView(QWidget):
         top_panels.addWidget(batch_card, stretch=2)
         ws_layout.addLayout(top_panels)
 
-        # 03 / Orders panel
+        # 03 / Inventory batches panel
+        batches_card = QFrame()
+        batches_card.setObjectName("surfaceCard")
+        batches_layout = QVBoxLayout(batches_card)
+        batches_layout.setContentsMargins(20, 18, 20, 18)
+        batches_layout.setSpacing(12)
+        batches_header = QHBoxLayout()
+        batches_title = QLabel("Менің партияларым")
+        batches_title.setObjectName("sectionTitle")
+        self.batches_refresh_btn = QPushButton("Жаңарту")
+        self.batches_refresh_btn.clicked.connect(self.load_batches)
+        batches_header.addWidget(batches_title)
+        batches_header.addStretch(1)
+        batches_header.addWidget(self.batches_refresh_btn)
+        batches_layout.addLayout(batches_header)
+        self.batches_state = FeedbackBanner()
+        self.batches_action_feedback = FeedbackBanner()
+        batches_layout.addWidget(self.batches_state)
+        batches_layout.addWidget(self.batches_action_feedback)
+        self.batches_container = QVBoxLayout()
+        self.batches_container.setSpacing(10)
+        batches_layout.addLayout(self.batches_container)
+        ws_layout.addWidget(batches_card)
+
+        # 04 / Orders panel
         orders_card = QFrame()
         orders_card.setObjectName("surfaceCard")
         orders_layout = QVBoxLayout(orders_card)
@@ -352,6 +380,8 @@ class SellerView(QWidget):
     def reset_state(self) -> None:
         self.store = None
         self.published_product_name = None
+        self.batches = []
+        self.updating_batch_ids.clear()
         self.orders = []
         self.orders_offset = 0
         self.orders_has_more = False
@@ -364,9 +394,12 @@ class SellerView(QWidget):
         self.view_published_btn.setVisible(False)
         self.store_feedback.clear()
         self.publish_feedback.clear()
+        self.batches_state.clear()
+        self.batches_action_feedback.clear()
         self.orders_state.clear()
         self.orders_action_feedback.clear()
         self._clear_orders_widgets()
+        self._clear_batch_widgets()
 
     def refresh(self) -> None:
         user = self.api.user
@@ -396,6 +429,7 @@ class SellerView(QWidget):
         else:
             self._render_store(store)
 
+        self.load_batches()
         self.load_orders(append=False)
 
     def _render_store(self, store: dict[str, Any] | None) -> None:
@@ -499,10 +533,167 @@ class SellerView(QWidget):
             "success",
         )
         self.view_published_btn.setVisible(True)
+        self.load_batches()
 
     def _open_published_in_catalog(self) -> None:
         if self.published_product_name:
             self.on_view_published(self.published_product_name)
+
+    def _clear_batch_widgets(self) -> None:
+        while self.batches_container.count():
+            item = self.batches_container.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.hide()
+                widget.setParent(None)
+                widget.deleteLater()
+
+    def load_batches(self) -> list[dict[str, Any]]:
+        if not self.api.user or self.api.user.get("role") != "seller":
+            return []
+        self.batches_refresh_btn.setDisabled(True)
+        self.batches_state.set_message("Партиялар жүктелуде…", "")
+        try:
+            self.batches = self.api.list_seller_batches()
+        except ApiError as exc:
+            self.batches_refresh_btn.setDisabled(False)
+            self.batches_state.set_message(translate_api_error(exc), "error")
+            return self.batches
+
+        self._render_batches()
+        if self.batches:
+            self.batches_state.clear()
+        else:
+            self.batches_state.set_message("Әзірге жарияланған партиялар жоқ.", "")
+        self.batches_refresh_btn.setDisabled(False)
+        return self.batches
+
+    def _render_batches(self) -> None:
+        self._clear_batch_widgets()
+        for batch in self.batches:
+            batch_id = str(batch["batch_id"])
+            product = batch.get("product", {})
+            status = batch["status"]
+            currency = batch.get("currency", "KZT")
+            card = QFrame()
+            card.setObjectName("orderCard")
+            layout = QVBoxLayout(card)
+            layout.setContentsMargins(16, 14, 16, 14)
+            layout.setSpacing(6)
+
+            head = QHBoxLayout()
+            title = QLabel(product.get("name", "Өнім"))
+            title.setObjectName("productTitle")
+            pill = QLabel(batch_status_label(status))
+            pill.setObjectName("statusPill")
+            pill.setProperty("batchStatus", status)
+            repolish(pill)
+            head.addWidget(title)
+            head.addStretch(1)
+            head.addWidget(pill)
+            layout.addLayout(head)
+
+            info = QLabel(
+                f"Қалғаны: {format_quantity(batch['quantity_available'])} {unit_label(product.get('unit', 'piece'))} · "
+                f"Жарамдылық мерзімі: {format_datetime(batch['expires_at'])}"
+            )
+            info.setObjectName("mutedText")
+            info.setWordWrap(True)
+            layout.addWidget(info)
+            prices = QLabel(
+                f"Жеңілдік бағасы: {format_money(batch['discount_price'], currency)} · "
+                f"Бастапқы баға: {format_money(batch['regular_price'], currency)}"
+            )
+            layout.addWidget(prices)
+
+            actions = QHBoxLayout()
+            is_updating = batch_id in self.updating_batch_ids
+            if status == "active":
+                pause_btn = QPushButton("Тоқтату")
+                pause_btn.setDisabled(is_updating)
+                pause_btn.clicked.connect(
+                    lambda _=False, bid=batch_id: self._update_batch_status(bid, "paused")
+                )
+                actions.addWidget(pause_btn)
+            elif status == "paused":
+                activate_btn = QPushButton("Іске қосу")
+                activate_btn.setProperty("variant", "primary")
+                activate_btn.setDisabled(is_updating)
+                activate_btn.clicked.connect(
+                    lambda _=False, bid=batch_id: self._update_batch_status(bid, "active")
+                )
+                actions.addWidget(activate_btn)
+            price_btn = QPushButton("Бағаны өзгерту")
+            price_btn.setDisabled(is_updating)
+            price_btn.clicked.connect(lambda _=False, current=batch: self._change_batch_price(current))
+            actions.addWidget(price_btn)
+            actions.addStretch(1)
+            layout.addLayout(actions)
+            self.batches_container.addWidget(card)
+
+    def _update_batch_status(self, batch_id: str, new_status: str) -> None:
+        message = "Партия тоқтатылды." if new_status == "paused" else "Партия іске қосылды."
+        self._update_batch(batch_id, status=new_status, success_message=message)
+
+    def _change_batch_price(self, batch: dict[str, Any]) -> None:
+        current = Decimal(str(batch["discount_price"]))
+        regular = Decimal(str(batch["regular_price"]))
+        value, accepted = QInputDialog.getDouble(
+            self,
+            "Бағаны өзгерту",
+            "Жаңа жеңілдік бағасы, ₸",
+            float(current),
+            0.0,
+            float(regular),
+            2,
+        )
+        if not accepted:
+            return
+        new_price = Decimal(f"{value:.2f}")
+        if new_price == current:
+            self.batches_action_feedback.set_message("Баға өзгерген жоқ.", "")
+            return
+        self._update_batch(
+            str(batch["batch_id"]),
+            discount_price=format_decimal_api(new_price, places=2),
+            success_message="Партияның жеңілдік бағасы жаңартылды.",
+        )
+
+    def _update_batch(
+        self,
+        batch_id: str,
+        *,
+        status: str | None = None,
+        discount_price: str | None = None,
+        success_message: str,
+    ) -> None:
+        if batch_id in self.updating_batch_ids:
+            return
+        self.updating_batch_ids.add(batch_id)
+        self.batches_action_feedback.clear()
+        self._render_batches()
+        try:
+            updated = self.api.update_seller_batch(
+                batch_id,
+                status=status,
+                discount_price=discount_price,
+            )
+        except ApiError as exc:
+            self.updating_batch_ids.discard(batch_id)
+            self.batches_action_feedback.set_message(translate_api_error(exc), "error")
+            if exc.status_code in {404, 409}:
+                self.load_batches()
+            else:
+                self._render_batches()
+            return
+
+        self.updating_batch_ids.discard(batch_id)
+        for index, batch in enumerate(self.batches):
+            if str(batch["batch_id"]) == batch_id:
+                self.batches[index] = updated
+                break
+        self._render_batches()
+        self.batches_action_feedback.set_message(success_message, "success")
 
     def _clear_orders_widgets(self) -> None:
         while self.orders_container.count():
